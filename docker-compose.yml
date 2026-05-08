@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - flag-data:/data
+    environment:
+      - APP_PASSWORD=${APP_PASSWORD}
+      - LITESTREAM_ACCESS_KEY_ID=${LITESTREAM_ACCESS_KEY_ID}
+      - LITESTREAM_SECRET_ACCESS_KEY=${LITESTREAM_SECRET_ACCESS_KEY}
+      - LITESTREAM_BUCKET=${LITESTREAM_BUCKET}
+      - LITESTREAM_ENDPOINT=${LITESTREAM_ENDPOINT}
+      - LITESTREAM_PATH=${LITESTREAM_PATH}
+      - LITESTREAM_REGION=${LITESTREAM_REGION}
+    restart: unless-stopped
+
+volumes:
+  flag-data:
