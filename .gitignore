@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+**/data/*.db
+**/data/*.db-*
+*.tsbuildinfo
+*.log
+.DS_Store
+.vite/
+
+restored.db*
+.pnpm-store/

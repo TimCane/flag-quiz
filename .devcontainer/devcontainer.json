@@ -1,0 +1,10 @@
+{
+	"name": "Node.js & TypeScript",
+	"image": "mcr.microsoft.com/devcontainers/typescript-node:1-20-bullseye",
+	"runArgs": [
+		"--net=host"
+	],
+  "features": {
+  "ghcr.io/timcane/devcontainer-features/claude-code-passthrough:latest": {}
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "flag-quiz",
+  "private": true,
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "dev:server": "pnpm --filter @flag-quiz/server dev",
+    "dev:client": "pnpm --filter @flag-quiz/client dev",
+    "build:shared": "pnpm --filter @flag-quiz/shared build",
+    "build:client": "pnpm --filter @flag-quiz/client build",
+    "build:server": "pnpm --filter @flag-quiz/server build",
+    "migrate": "pnpm exec tsx scripts/migrate-v1.ts"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^11.10.0",
+    "tsx": "^4.21.0"
+  }
+}
