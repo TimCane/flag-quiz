@@ -30,7 +30,7 @@ WORKDIR /build
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/server/package.json packages/server/
-RUN pnpm install --frozen-lockfile --prod --filter @flag-quiz/server
+RUN pnpm install --frozen-lockfile --prod --filter @flag-quiz/server --filter @flag-quiz/shared
 
 # --- Stage 6: Litestream binary ---
 FROM litestream/litestream:0.3.13 AS litestream
@@ -47,7 +47,8 @@ COPY --from=server-prod-deps /build/packages/server/node_modules /app/packages/s
 COPY --from=server-build /build/packages/server/dist /app/packages/server/dist
 COPY --from=server-build /build/packages/server/package.json /app/packages/server/package.json
 
-# Shared build (server imports from it)
+# Shared build + deps (server imports from it at runtime)
+COPY --from=server-prod-deps /build/packages/shared/node_modules /app/packages/shared/node_modules
 COPY --from=shared-build /build/packages/shared/dist /app/packages/shared/dist
 COPY --from=shared-build /build/packages/shared/package.json /app/packages/shared/package.json
 
