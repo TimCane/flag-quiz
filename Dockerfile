@@ -2,7 +2,7 @@
 FROM node:22-alpine AS deps
 RUN corepack enable pnpm
 WORKDIR /build
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/client/package.json packages/client/
 COPY packages/server/package.json packages/server/
@@ -27,7 +27,7 @@ RUN pnpm --filter @flag-quiz/server build
 FROM node:22-alpine AS server-prod-deps
 RUN corepack enable pnpm && apk add --no-cache python3 make g++
 WORKDIR /build
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/server/package.json packages/server/
 RUN pnpm install --frozen-lockfile --prod --filter @flag-quiz/server
