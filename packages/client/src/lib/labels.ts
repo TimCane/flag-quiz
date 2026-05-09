@@ -70,6 +70,16 @@ export const CONTINENT_LABELS_FULL: Record<string, string> = {
 
 export const PIE_COLORS = ["#5a6178", "#eab308", "#c9a84c", "#f97316"];
 
+// Olympic ring colours mapped to continents
+export const CONTINENT_COLORS: Record<string, string> = {
+  "Africa": "#333333",       // Black ring
+  "Asia": "#F4C542",         // Yellow ring
+  "Europe": "#0081C8",       // Blue ring
+  "N. America": "#EE334E",   // Red ring
+  "S. America": "#FC4C02",   // Red-orange (variant for second Americas)
+  "Oceania": "#00A651",      // Green ring
+};
+
 export const CONFIDENCE_COLORS: Record<number, string> = {
   1: "#ef4444",
   2: "#f97316",

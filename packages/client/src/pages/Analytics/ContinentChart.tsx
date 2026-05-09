@@ -1,8 +1,8 @@
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
-import { CHART_TOOLTIP_STYLE } from "../../lib/labels";
+import { CHART_TOOLTIP_STYLE, CONTINENT_COLORS } from "../../lib/labels";
 
 interface ContinentDatum {
   continent: string;
@@ -24,7 +24,11 @@ export function ContinentChart({ data }: { data: ContinentDatum[] }) {
               contentStyle={CHART_TOOLTIP_STYLE}
               formatter={(value) => [`${value}%`, "Accuracy"]}
             />
-            <Bar dataKey="accuracy" fill="#10b981" radius={[6, 6, 0, 0]} />
+            <Bar dataKey="accuracy" radius={[6, 6, 0, 0]}>
+              {data.map((d) => (
+                <Cell key={d.continent} fill={CONTINENT_COLORS[d.continent] || "#10b981"} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </CardContent>

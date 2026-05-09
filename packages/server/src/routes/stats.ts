@@ -387,5 +387,21 @@ export function statsRoutes(db: Database.Database): Hono {
     return c.json({ ok: true, global: globalP, by_mode: byMode, by_flag: byFlag });
   });
 
+  // Average reaction time per flag
+  app.get("/stats/reaction-times", (c) => {
+    const rows = db.prepare(`
+      SELECT flag, ROUND(AVG(rt)) AS avg_ms FROM (
+        SELECT flag, reaction_time_ms AS rt FROM classic_attempts WHERE reaction_time_ms > 0
+        UNION ALL
+        SELECT flag, reaction_time_ms AS rt FROM pick_flag_attempts WHERE reaction_time_ms > 0
+        UNION ALL
+        SELECT flag, reaction_time_ms AS rt FROM pick_country_attempts WHERE reaction_time_ms > 0
+      )
+      GROUP BY flag
+    `).all() as { flag: string; avg_ms: number }[];
+
+    return c.json({ ok: true, reaction_times: rows });
+  });
+
   return app;
 }
