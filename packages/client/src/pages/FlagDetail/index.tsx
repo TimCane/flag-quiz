@@ -42,7 +42,7 @@ export function FlagDetail() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Mnemonic</CardTitle>
+          <CardTitle>Note</CardTitle>
         </CardHeader>
         <CardContent>
           <MnemonicTextarea

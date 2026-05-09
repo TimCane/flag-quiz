@@ -25,7 +25,7 @@ export function Layout() {
             )}
             <DesktopNavLink to="/history" icon={<History className="h-4 w-4" />} label="History" active={location.pathname.startsWith("/history")} />
             <DesktopNavLink to="/sessions" icon={<List className="h-4 w-4" />} label="Sessions" active={location.pathname.startsWith("/sessions")} />
-            <DesktopNavLink to="/mnemonics" icon={<PenLine className="h-4 w-4" />} label="Mnemonics" active={location.pathname === "/mnemonics"} />
+            <DesktopNavLink to="/mnemonics" icon={<PenLine className="h-4 w-4" />} label="Notes" active={location.pathname === "/mnemonics"} />
             <DesktopNavLink to="/analytics" icon={<BarChart3 className="h-4 w-4" />} label="Analytics" active={location.pathname === "/analytics"} />
             <DesktopNavLink to="/settings" icon={<Settings className="h-4 w-4" />} label="Settings" active={location.pathname === "/settings"} />
             <button
@@ -65,7 +65,7 @@ export function Layout() {
       <nav className={`fixed bottom-0 left-0 right-0 z-50 flex border-t border-surface-700/40 bg-surface-900/90 backdrop-blur-lg sm:hidden ${isPlaying ? "hidden" : ""}`}>
         <MobileNavLink to="/" icon={<Home className="h-5 w-5" />} label="Home" active={location.pathname === "/"} />
         <MobileNavLink to="/history" icon={<History className="h-5 w-5" />} label="History" active={location.pathname.startsWith("/history")} />
-        <MobileNavLink to="/mnemonics" icon={<PenLine className="h-5 w-5" />} label="Mnemonics" active={location.pathname === "/mnemonics"} />
+        <MobileNavLink to="/mnemonics" icon={<PenLine className="h-5 w-5" />} label="Notes" active={location.pathname === "/mnemonics"} />
         <MobileNavLink to="/analytics" icon={<BarChart3 className="h-5 w-5" />} label="Analytics" active={location.pathname === "/analytics"} />
         <MobileNavLink to="/settings" icon={<Settings className="h-5 w-5" />} label="Settings" active={location.pathname === "/settings"} />
       </nav>

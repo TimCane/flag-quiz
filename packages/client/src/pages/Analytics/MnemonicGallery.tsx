@@ -14,7 +14,7 @@ export function MnemonicGallery({ mnemonics }: { mnemonics: MnemonicEntry[] }) {
     <Card>
       <CardHeader>
         <CardTitle>
-          Mnemonic Gallery
+          Notes Gallery
           <span className="ml-2 text-sm font-normal text-surface-500">({mnemonics.length})</span>
         </CardTitle>
       </CardHeader>

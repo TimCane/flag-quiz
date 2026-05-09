@@ -60,9 +60,9 @@ export function HistoryList() {
           value={mnemonicFilter}
           onChange={setMnemonicFilter}
           options={[
-            { value: "all", label: "All mnemonics" },
-            { value: "has", label: "Has mnemonic" },
-            { value: "none", label: "No mnemonic" },
+            { value: "all", label: "All notes" },
+            { value: "has", label: "Has note" },
+            { value: "none", label: "No note" },
           ]}
         />
         <FilterSelect
