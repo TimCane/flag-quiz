@@ -50,4 +50,11 @@ export const DEFAULT_SETTINGS: Setting[] = [
     label: "Maximum review interval (days)",
     category: "Advanced",
   },
+  {
+    key: "presentation_config",
+    value: '{"tag_order":[],"show_title_slide":true,"show_end_slide":true,"show_analytics":true,"show_mnemonics":true}',
+    type: "string",
+    label: "Presentation config",
+    category: "Presentation",
+  },
 ];

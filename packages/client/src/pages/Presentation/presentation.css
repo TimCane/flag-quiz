@@ -1,0 +1,113 @@
+/* Reveal.js needs explicit dimensions on the container */
+.reveal {
+  height: 100vh;
+  width: 100vw;
+  position: fixed;
+  inset: 0;
+  z-index: 10000; /* Above the body::after noise overlay (z-index: 9999) */
+  font-family: var(--font-body);
+  background: var(--color-surface-950);
+}
+
+.reveal h1,
+.reveal h2,
+.reveal h3 {
+  font-family: var(--font-display);
+  font-style: italic;
+  text-transform: none;
+}
+
+.reveal .slides {
+  text-align: center;
+}
+
+/* Flag display */
+.flag-container {
+  display: inline-block;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.flag-image {
+  width: auto;
+  height: 280px;
+  max-width: 90vw;
+  display: block;
+}
+
+.reveal .slide-background {
+  background: var(--color-surface-950);
+}
+
+/* Ensure fragments animate nicely */
+.reveal .fragment {
+  transition: all 0.4s ease-out;
+}
+
+.reveal .fragment.visible {
+  opacity: 1;
+}
+
+/* Progress bar color */
+.reveal .progress span {
+  background: var(--color-emerald-500, #10b981);
+}
+
+/* Controls color */
+.reveal .controls button {
+  color: var(--color-emerald-500, #10b981);
+}
+
+/* Chart containers need explicit dimensions for Recharts */
+.chart-container {
+  width: 80%;
+  margin: 0 auto;
+}
+
+/* ── Presentation-specific pill & card styles ──────────────── */
+
+.pres-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 32px;
+  border: 1px solid var(--color-surface-700);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--color-surface-900) 60%, transparent);
+  max-width: 220px;
+  text-align: center;
+}
+
+.pres-card--amber { border-color: #92400e; }
+.pres-card--emerald { border-color: #065f46; }
+.pres-card--red { border-color: #991b1b; }
+
+.pres-stat-row {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+}
+
+.pres-stat-row > div {
+  text-align: center;
+}
+
+.pres-confusion-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-surface-700);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-surface-900) 60%, transparent);
+}
+
+.pres-confusion-card img {
+  height: 32px;
+  border-radius: 4px;
+}

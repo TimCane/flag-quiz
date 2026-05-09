@@ -12,6 +12,7 @@ import { SessionDetail } from "./pages/SessionDetail";
 import { Analytics } from "./pages/Analytics";
 import { SettingsPage } from "./pages/SettingsPage";
 import { MnemonicWorkshop } from "./pages/MnemonicWorkshop";
+import { Presentation } from "./pages/Presentation";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated()) {
@@ -43,6 +44,14 @@ export function App() {
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
+        <Route
+          path="/presentation"
+          element={
+            <ProtectedRoute>
+              <Presentation />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </BrowserRouter>
   );
