@@ -113,6 +113,24 @@ function createTables(db: Database.Database): void {
       label TEXT NOT NULL,
       category TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS tags (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      description TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS flag_tags (
+      flag TEXT NOT NULL,
+      tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (flag, tag_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_flag_tags_tag_id ON flag_tags(tag_id);
+    CREATE INDEX IF NOT EXISTS idx_flag_tags_flag ON flag_tags(flag);
   `);
 }
 

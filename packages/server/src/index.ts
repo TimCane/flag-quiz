@@ -11,6 +11,7 @@ import { flagProgressRoutes } from "./routes/flag-progress.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { statsRoutes } from "./routes/stats.js";
 import { exportRoutes } from "./routes/export.js";
+import { tagRoutes } from "./routes/tags.js";
 
 const app = new Hono();
 
@@ -29,6 +30,7 @@ app.route("/api", flagProgressRoutes(db));
 app.route("/api", settingsRoutes(db));
 app.route("/api", statsRoutes(db));
 app.route("/api", exportRoutes(db));
+app.route("/api", tagRoutes(db));
 
 // Serve client static files in production
 const clientDir = process.env.CLIENT_DIR;

@@ -60,6 +60,8 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+
   // Auth (no token needed)
   login: async (password: string) => {
     const res = await fetch(`${BASE}/auth/check`, {
