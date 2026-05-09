@@ -2,6 +2,8 @@ import { useSettingsPage } from "./useSettingsPage";
 import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { SettingRow } from "./SettingRow";
+import { TagsSection } from "./TagsSection";
+import { PresentationSection } from "./PresentationSection";
 
 export function SettingsPage() {
   const {
@@ -64,6 +66,9 @@ export function SettingsPage() {
           </Card>
         );
       })}
+
+      <TagsSection />
+      <PresentationSection />
     </div>
   );
 }

@@ -1,6 +1,7 @@
-import { type Flag } from "@flag-quiz/shared";
+import { type Flag, type Tag } from "@flag-quiz/shared";
 import { FlagDisplay } from "../../components/game/FlagDisplay";
 import { MnemonicTextarea } from "../../components/ui/mnemonic-textarea";
+import { TagSelect } from "../../components/ui/tag-select";
 import { CONTINENT_LABELS } from "../../lib/labels";
 
 interface MnemonicCardProps {
@@ -8,12 +9,15 @@ interface MnemonicCardProps {
   mnemonic: string;
   isEdited: boolean;
   onEdit: (code: string, value: string) => void;
+  tags: Tag[];
+  assignedTagIds: string[];
+  onTagsChange: (code: string, tagIds: string[]) => void;
 }
 
-export function MnemonicCard({ flag, mnemonic, isEdited, onEdit }: MnemonicCardProps) {
+export function MnemonicCard({ flag, mnemonic, isEdited, onEdit, tags, assignedTagIds, onTagsChange }: MnemonicCardProps) {
   return (
     <div
-      className={`flex flex-col items-center gap-3.5 rounded-2xl border p-5 transition-all duration-200 ${
+      className={`flex flex-col items-center gap-3 rounded-2xl border p-5 transition-all duration-200 ${
         isEdited
           ? "border-amber-500/40 bg-amber-500/5"
           : "border-surface-800/80 bg-surface-900/50 hover:bg-surface-800/30"
@@ -34,6 +38,13 @@ export function MnemonicCard({ flag, mnemonic, isEdited, onEdit }: MnemonicCardP
         rows={2}
         label={false}
       />
+      <div className="w-full">
+        <TagSelect
+          tags={tags}
+          selectedIds={assignedTagIds}
+          onChange={(ids) => onTagsChange(flag.code, ids)}
+        />
+      </div>
     </div>
   );
 }

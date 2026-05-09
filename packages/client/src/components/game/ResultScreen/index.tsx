@@ -2,6 +2,7 @@ import { flagByCode, type SchedulingResult, type Rating } from "@flag-quiz/share
 import { FlagDisplay } from "../FlagDisplay";
 import { useResultScreen } from "./useResultScreen";
 import { MnemonicTextarea } from "../../ui/mnemonic-textarea";
+import { TagPills } from "../../ui/tag-pills";
 import { RATING_LABELS, RATING_COLORS } from "../../../lib/labels";
 
 interface ResultScreenProps {
@@ -12,6 +13,7 @@ interface ResultScreenProps {
   mnemonic: string;
   schedulingChoices: SchedulingResult[];
   onRate: (rating: Rating, mnemonic: string) => void;
+  tagNames?: string[];
 }
 
 export function ResultScreen({
@@ -22,6 +24,7 @@ export function ResultScreen({
   mnemonic: initialMnemonic,
   schedulingChoices,
   onRate,
+  tagNames = [],
 }: ResultScreenProps) {
   const { mnemonic, setMnemonic } = useResultScreen({ initialMnemonic });
   const flag = flagByCode.get(flagCode);
@@ -59,6 +62,13 @@ export function ResultScreen({
           rows={2}
         />
       </div>
+
+      {/* Tags */}
+      {tagNames.length > 0 && (
+        <div className="mt-3 w-full max-w-sm">
+          <TagPills tagNames={tagNames} />
+        </div>
+      )}
 
       {/* Rating buttons — prominent at bottom */}
       <div className="mt-6 grid w-full max-w-sm grid-cols-2 gap-2.5 sm:grid-cols-4">

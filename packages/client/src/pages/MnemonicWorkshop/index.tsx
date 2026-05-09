@@ -16,14 +16,19 @@ export function MnemonicWorkshop() {
     setFilter,
     continentFilter,
     setContinentFilter,
+    tagFilter,
+    setTagFilter,
     search,
     setSearch,
     getDisplayMnemonic,
     handleEdit,
     handleSaveAll,
+    handleTagsChange,
     filteredFlags,
     filledCount,
     totalFlags,
+    tags,
+    flagTagsMap,
   } = useMnemonicWorkshop();
 
   if (loading) {
@@ -38,9 +43,9 @@ export function MnemonicWorkshop() {
     <div className="space-y-4 animate-fade-in">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl italic">Mnemonic Workshop</h1>
+          <h1 className="font-display text-3xl italic">Notes Workshop</h1>
           <p className="mt-1 text-sm text-surface-500">
-            <span className="font-bold text-emerald-400">{filledCount}</span>/{totalFlags} flags have mnemonics
+            <span className="font-bold text-emerald-400">{filledCount}</span>/{totalFlags} flags have notes
           </p>
         </div>
         {edits.size > 0 && (
@@ -51,7 +56,7 @@ export function MnemonicWorkshop() {
         )}
         {savedCount > 0 && (
           <span className="inline-block rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-sm font-semibold text-emerald-400">
-            Saved {savedCount} mnemonics
+            Saved {savedCount} notes
           </span>
         )}
       </div>
@@ -77,10 +82,21 @@ export function MnemonicWorkshop() {
           onChange={setFilter}
           options={[
             { value: "all", label: "All" },
-            { value: "empty", label: "Needs mnemonic" },
-            { value: "filled", label: "Has mnemonic" },
+            { value: "empty", label: "Needs note" },
+            { value: "filled", label: "Has note" },
           ]}
         />
+        {tags.length > 0 && (
+          <FilterSelect
+            value={tagFilter}
+            onChange={setTagFilter}
+            options={[
+              { value: "all", label: "All tags" },
+              { value: "untagged", label: "Untagged" },
+              ...tags.map((t) => ({ value: t.id, label: t.name || "Unnamed" })),
+            ]}
+          />
+        )}
       </div>
 
       <div className="text-sm font-medium text-surface-500">{filteredFlags.length} flags</div>
@@ -93,6 +109,9 @@ export function MnemonicWorkshop() {
             mnemonic={getDisplayMnemonic(flag.code)}
             isEdited={edits.has(flag.code)}
             onEdit={handleEdit}
+            tags={tags}
+            assignedTagIds={flagTagsMap.get(flag.code) || []}
+            onTagsChange={handleTagsChange}
           />
         ))}
       </div>

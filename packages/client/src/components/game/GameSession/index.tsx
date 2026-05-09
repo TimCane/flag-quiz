@@ -40,6 +40,7 @@ export function GameSession({ mode, exitCondition, quick = false, resumeSession 
     handleQuickWrongNext,
     endSession,
     navigate,
+    getTagNames,
   } = useGameSession({ mode, exitCondition, quick, resumeSession });
 
   if (loading) {
@@ -154,6 +155,7 @@ export function GameSession({ mode, exitCondition, quick = false, resumeSession 
           forgotten={attempt.forgotten}
           mnemonic={progressMap.get(attempt.flagCode)?.mnemonic || ""}
           onNext={handleQuickWrongNext}
+          tagNames={getTagNames(attempt.flagCode)}
         />
       )}
 
@@ -174,6 +176,7 @@ export function GameSession({ mode, exitCondition, quick = false, resumeSession 
             mnemonic={progressMap.get(attempt.flagCode)?.mnemonic || ""}
             schedulingChoices={attempt.schedulingChoices}
             onRate={handleRate}
+            tagNames={getTagNames(attempt.flagCode)}
           />
           <div className="mt-4 text-center text-xs font-medium text-surface-600">
             Press 1-4 to rate

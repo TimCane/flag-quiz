@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { flags, type FlagProgress } from "@flag-quiz/shared";
+import { flags, type FlagProgress, type Tag, type FlagTag } from "@flag-quiz/shared";
 import { api } from "../../lib/api";
 
 export function useMnemonicWorkshop() {
@@ -10,15 +10,31 @@ export function useMnemonicWorkshop() {
   const [savedCount, setSavedCount] = useState(0);
   const [filter, setFilter] = useState<string>("all");
   const [continentFilter, setContinentFilter] = useState<string>("all");
+  const [tagFilter, setTagFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [flagTagsMap, setFlagTagsMap] = useState<Map<string, string[]>>(new Map());
 
   useEffect(() => {
-    api
-      .get<{ ok: boolean; records: FlagProgress[] }>("/flag-progress")
-      .then((res) => {
+    Promise.all([
+      api.get<{ ok: boolean; records: FlagProgress[] }>("/flag-progress"),
+      api.get<{ ok: boolean; tags: Tag[] }>("/tags"),
+      api.get<{ ok: boolean; flag_tags: FlagTag[] }>("/flag-tags"),
+    ])
+      .then(([progressRes, tagsRes, flagTagsRes]) => {
         const pMap = new Map<string, FlagProgress>();
-        for (const p of res.records) pMap.set(p.flag, p);
+        for (const p of progressRes.records) pMap.set(p.flag, p);
         setProgressMap(pMap);
+
+        setTags(tagsRes.tags);
+
+        const ftMap = new Map<string, string[]>();
+        for (const ft of flagTagsRes.flag_tags) {
+          const list = ftMap.get(ft.flag) || [];
+          list.push(ft.tag_id);
+          ftMap.set(ft.flag, list);
+        }
+        setFlagTagsMap(ftMap);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -44,6 +60,33 @@ export function useMnemonicWorkshop() {
       setEdits((prev) => new Map(prev).set(code, value));
     }
   }
+
+  const handleTagsChange = useCallback(
+    async (code: string, tagIds: string[]) => {
+      setFlagTagsMap((prev) => new Map(prev).set(code, tagIds));
+      try {
+        await api.put(`/flag-tags/${code}`, {
+          tag_ids: tagIds,
+          updated_at: new Date().toISOString(),
+        });
+      } catch {
+        // Revert on failure
+        api
+          .get<{ ok: boolean; flag_tags: FlagTag[] }>("/flag-tags")
+          .then((res) => {
+            const ftMap = new Map<string, string[]>();
+            for (const ft of res.flag_tags) {
+              const list = ftMap.get(ft.flag) || [];
+              list.push(ft.tag_id);
+              ftMap.set(ft.flag, list);
+            }
+            setFlagTagsMap(ftMap);
+          })
+          .catch(() => {});
+      }
+    },
+    [],
+  );
 
   async function handleSaveAll() {
     if (edits.size === 0) return;
@@ -105,6 +148,14 @@ export function useMnemonicWorkshop() {
           if (!f.name.toLowerCase().includes(q) && !f.code.includes(q)) return false;
         }
         if (continentFilter !== "all" && f.continent !== continentFilter) return false;
+        if (tagFilter !== "all") {
+          const assignedTags = flagTagsMap.get(f.code) || [];
+          if (tagFilter === "untagged") {
+            if (assignedTags.length > 0) return false;
+          } else {
+            if (!assignedTags.includes(tagFilter)) return false;
+          }
+        }
         if (filter === "empty") {
           const m = getDisplayMnemonic(f.code);
           if (m.length > 0) return false;
@@ -114,7 +165,7 @@ export function useMnemonicWorkshop() {
         }
         return true;
       }),
-    [search, continentFilter, filter, getDisplayMnemonic],
+    [search, continentFilter, tagFilter, filter, getDisplayMnemonic, flagTagsMap],
   );
 
   const filledCount = useMemo(
@@ -131,13 +182,18 @@ export function useMnemonicWorkshop() {
     setFilter,
     continentFilter,
     setContinentFilter,
+    tagFilter,
+    setTagFilter,
     search,
     setSearch,
     getDisplayMnemonic,
     handleEdit,
     handleSaveAll,
+    handleTagsChange,
     filteredFlags,
     filledCount,
     totalFlags: flags.length,
+    tags,
+    flagTagsMap,
   };
 }

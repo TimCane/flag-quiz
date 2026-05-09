@@ -2,6 +2,7 @@ import { flagByCode } from "@flag-quiz/shared";
 import { FlagDisplay } from "../FlagDisplay";
 import { Button } from "../../ui/button";
 import { MnemonicTextarea } from "../../ui/mnemonic-textarea";
+import { TagPills } from "../../ui/tag-pills";
 import { useQuickWrongScreen } from "./useQuickWrongScreen";
 
 interface QuickWrongScreenProps {
@@ -10,6 +11,7 @@ interface QuickWrongScreenProps {
   forgotten: boolean;
   mnemonic: string;
   onNext: (mnemonic: string) => void;
+  tagNames?: string[];
 }
 
 export function QuickWrongScreen({
@@ -18,6 +20,7 @@ export function QuickWrongScreen({
   forgotten,
   mnemonic: initialMnemonic,
   onNext,
+  tagNames = [],
 }: QuickWrongScreenProps) {
   const { mnemonic, setMnemonic, handleNext } = useQuickWrongScreen({
     initialMnemonic,
@@ -52,6 +55,12 @@ export function QuickWrongScreen({
           autoFocus
         />
       </div>
+
+      {tagNames.length > 0 && (
+        <div className="w-full max-w-sm">
+          <TagPills tagNames={tagNames} />
+        </div>
+      )}
 
       <Button
         onClick={handleNext}

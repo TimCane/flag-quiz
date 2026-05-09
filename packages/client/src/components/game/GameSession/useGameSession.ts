@@ -6,6 +6,8 @@ import {
   type Rating,
   type SchedulingResult,
   type ConfusionMap,
+  type Tag,
+  type FlagTag,
   Mode,
   ExitCondition,
   flags,
@@ -75,6 +77,8 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [speedTimedOut, setSpeedTimedOut] = useState(false);
+  const [tagsMap, setTagsMap] = useState<Map<string, Tag>>(new Map());
+  const [flagTagsMap, setFlagTagsMap] = useState<Map<string, string[]>>(new Map());
   const promptStartRef = useRef<number>(0);
   const navigate = useNavigate();
 
@@ -100,11 +104,13 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
           api.get<{ ok: boolean; records: FlagProgress[] }>("/flag-progress"),
           api.get<{ ok: boolean; settings: Setting[] }>("/settings"),
           api.get<{ ok: boolean; wrong_guesses: { flag: string; guess: string }[] }>("/attempts/wrong-guesses"),
+          api.get<{ ok: boolean; tags: Tag[] }>("/tags"),
+          api.get<{ ok: boolean; flag_tags: FlagTag[] }>("/flag-tags"),
         ];
         if (quick) {
           requests.push(api.get<{ ok: boolean } & Percentiles>("/stats/percentiles"));
         }
-        const [progressRes, settingsRes, wrongGuessesRes, percentilesRes] = await Promise.all(requests);
+        const [progressRes, settingsRes, wrongGuessesRes, tagsRes, flagTagsRes, percentilesRes] = await Promise.all(requests);
 
         if (percentilesRes) {
           setPercentiles({
@@ -123,6 +129,18 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
         setSettings(sMap);
 
         setConfusionMap(buildConfusionMap(wrongGuessesRes.wrong_guesses ?? []));
+
+        const tMap = new Map<string, Tag>();
+        for (const t of tagsRes.tags) tMap.set(t.id, t);
+        setTagsMap(tMap);
+
+        const ftMap = new Map<string, string[]>();
+        for (const ft of flagTagsRes.flag_tags) {
+          const list = ftMap.get(ft.flag) || [];
+          list.push(ft.tag_id);
+          ftMap.set(ft.flag, list);
+        }
+        setFlagTagsMap(ftMap);
 
         const retention = parseFloat(sMap.get("fsrs_request_retention") || "0.9");
         const maxInterval = parseInt(sMap.get("fsrs_maximum_interval") || "365", 10);
@@ -416,6 +434,16 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
     navigate(`/summary/${sessionId}`);
   }
 
+  const getTagNames = useCallback(
+    (flagCode: string): string[] => {
+      const tagIds = flagTagsMap.get(flagCode) || [];
+      return tagIds
+        .map((id) => tagsMap.get(id)?.name)
+        .filter((n): n is string => !!n);
+    },
+    [flagTagsMap, tagsMap],
+  );
+
   return {
     // State
     loading,
@@ -445,5 +473,6 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
     handleQuickWrongNext,
     endSession,
     navigate,
+    getTagNames,
   };
 }
