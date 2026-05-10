@@ -147,18 +147,32 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
         fsrs.current = createFsrs({ requestRetention: retention, maximumInterval: maxInterval });
 
         const now = new Date();
+        // Random tiebreaker so flags without distinct FSRS ordering aren't alphabetical
+        const rng = new Map<string, number>();
+        for (const f of flags) rng.set(f.code, Math.random());
         const sorted = [...flags].sort((a, b) => {
           const pa = pMap.get(a.code);
           const pb = pMap.get(b.code);
           if (!pa && pb) return -1;
           if (pa && !pb) return 1;
-          if (!pa && !pb) return 0;
+          if (!pa && !pb) return rng.get(a.code)! - rng.get(b.code)!;
           const dueA = pa!.due ? new Date(pa!.due) : now;
           const dueB = pb!.due ? new Date(pb!.due) : now;
-          return dueA.getTime() - dueB.getTime();
+          const diff = dueA.getTime() - dueB.getTime();
+          return diff !== 0 ? diff : rng.get(a.code)! - rng.get(b.code)!;
         });
 
-        const sortedQueue = sorted.map((f) => f.code);
+        let finalList = sorted;
+        if (exitCondition === ExitCondition.DUE) {
+          const todayEnd = new Date(now);
+          todayEnd.setHours(23, 59, 59, 999);
+          finalList = sorted.filter((f) => {
+            const p = pMap.get(f.code);
+            if (!p || !p.due) return false;
+            return new Date(p.due) <= todayEnd;
+          });
+        }
+        const sortedQueue = finalList.map((f) => f.code);
 
         // Resume existing session or create new one
         if (resumeSession) {
@@ -391,6 +405,65 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
     [attempt, sessionId, mode, progressMap, exitCondition, currentIndex, queue, attemptCount, correctCount],
   );
 
+  /** Mark current attempt as accidental — saves with accidental flag, skips FSRS update */
+  const handleAccidental = useCallback(
+    () => {
+      if (!attempt || !sessionId) return;
+
+      const newAttemptCount = attemptCount + 1;
+      // Don't count accidental in correct tally
+      setAttemptCount(newAttemptCount);
+
+      // Fire-and-forget: save attempt with accidental=true, no progress update
+      const attemptId = crypto.randomUUID();
+      const ts = new Date().toISOString();
+      const baseData = {
+        id: attemptId,
+        session_id: sessionId,
+        flag: attempt.flagCode,
+        correct: attempt.correct,
+        confidence: 3, // Neutral — doesn't matter since it's excluded
+        reaction_time_ms: attempt.reactionTimeMs,
+        ts,
+        accidental: true,
+      };
+
+      const savePromise = (async () => {
+        if (mode === Mode.CLASSIC) {
+          await api.post("/classic-attempts", { ...baseData, guess: attempt.guess, forgotten: attempt.forgotten });
+        } else if (mode === Mode.PICK_THE_FLAG) {
+          await api.post("/pick-flag-attempts", { ...baseData, guess: attempt.guess ?? attempt.flagCode, options: attempt.options! });
+        } else if (mode === Mode.PICK_THE_COUNTRY) {
+          await api.post("/pick-country-attempts", { ...baseData, guess: attempt.guess ?? attempt.flagCode, options: attempt.options! });
+        }
+      })();
+      savePromise.catch((err) => console.error("Save failed:", err));
+
+      if (attempt.shouldEndAfterReview) {
+        clearActiveSession();
+        savePromise.then(() => endSession()).catch(() => endSession());
+        return;
+      }
+
+      const nextIndex = currentIndex + 1;
+      setCurrentIndex(nextIndex);
+      setPhase("prompt");
+      setAttempt(null);
+      promptStartRef.current = performance.now();
+
+      saveActiveSession({
+        sessionId,
+        mode,
+        exitCondition,
+        queue,
+        currentIndex: nextIndex,
+        attemptCount: newAttemptCount,
+        correctCount,
+      });
+    },
+    [attempt, sessionId, mode, exitCondition, currentIndex, queue, attemptCount, correctCount],
+  );
+
   /** Quick mode: correct flash done -- auto-rate and advance */
   const handleQuickCorrectDone = useCallback(() => {
     if (!attempt) return;
@@ -408,10 +481,15 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
     [attempt, handleRate],
   );
 
-  // Keyboard shortcuts: 1-4 for rating on result screen
+  // Keyboard shortcuts: 1-4 for rating, 0 for accidental on result screen
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (phase !== "result" || !attempt) return;
+      if (e.key === "0" && !attempt.correct) {
+        e.preventDefault();
+        handleAccidental();
+        return;
+      }
       const key = parseInt(e.key, 10);
       if (key >= 1 && key <= 4) {
         e.preventDefault();
@@ -421,7 +499,7 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [phase, attempt, handleRate, progressMap]);
+  }, [phase, attempt, handleRate, handleAccidental, progressMap]);
 
   async function endSession() {
     if (!sessionId) return;
@@ -469,6 +547,7 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
     handlePickAnswer,
     handleSpeedTimeout,
     handleRate,
+    handleAccidental,
     handleQuickCorrectDone,
     handleQuickWrongNext,
     endSession,

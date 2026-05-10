@@ -8,6 +8,7 @@ export const SessionSchema = z.object({
     ExitCondition.NORMAL,
     ExitCondition.STREAK,
     ExitCondition.SPEED,
+    ExitCondition.DUE,
   ]),
   quick: z.boolean().default(false),
   started: z.string().datetime(),

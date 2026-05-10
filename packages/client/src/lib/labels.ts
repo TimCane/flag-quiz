@@ -28,12 +28,14 @@ export const EXIT_LABELS: Record<string, string> = {
   normal: "Normal",
   streak: "Streak",
   speed: "Speed",
+  due: "Due",
 };
 
 export const EXIT_DESCRIPTIONS: Record<string, string> = {
   normal: "End manually",
   streak: "Ends on wrong answer",
   speed: "Ends if too slow",
+  due: "Only flags due for review",
 };
 
 export const STATE_LABELS: Record<number, string> = {

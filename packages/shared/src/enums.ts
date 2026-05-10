@@ -10,6 +10,7 @@ export const ExitCondition = {
   NORMAL: "normal",
   STREAK: "streak",
   SPEED: "speed",
+  DUE: "due",
 } as const;
 
 export type ExitCondition = (typeof ExitCondition)[keyof typeof ExitCondition];
