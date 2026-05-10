@@ -148,6 +148,12 @@ function migrateSchema(db: Database.Database): void {
       db.exec(`ALTER TABLE ${table} ADD COLUMN accidental INTEGER NOT NULL DEFAULT 0`);
     }
   }
+
+  // Add type column to tags if missing
+  const tagCols = db.prepare("PRAGMA table_info(tags)").all() as { name: string }[];
+  if (!tagCols.some((c) => c.name === "type")) {
+    db.exec("ALTER TABLE tags ADD COLUMN type TEXT NOT NULL DEFAULT 'group'");
+  }
 }
 
 function seedSettings(db: Database.Database): void {

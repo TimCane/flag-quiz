@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { type Tag } from "@flag-quiz/shared";
+import { type Tag, TAG_TYPES, type TagType } from "@flag-quiz/shared";
 import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { ChevronDown, ChevronRight, GripVertical, Trash2, Plus } from "lucide-react";
@@ -14,7 +14,7 @@ interface TagRowProps {
   onDragOver: (e: React.DragEvent, i: number) => void;
   onDrop: (i: number) => void;
   onDragEnd: () => void;
-  onUpdate: (id: string, updates: Partial<Pick<Tag, "name" | "description">>) => void;
+  onUpdate: (id: string, updates: Partial<Pick<Tag, "name" | "description" | "type">>) => void;
   onDelete: (id: string) => void;
   autoFocusName: boolean;
 }
@@ -74,16 +74,33 @@ function TagRow({
         <GripVertical className="h-4 w-4" />
       </div>
       <div className="flex-1 space-y-1.5">
-        <input
-          ref={nameRef}
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={handleNameBlur}
-          onKeyDown={handleKeyDown}
-          placeholder="Tag name..."
-          className="w-full rounded-lg border border-surface-700/80 bg-surface-800/60 px-3 py-2 text-sm font-medium text-white placeholder-surface-600 backdrop-blur-sm transition-all duration-200 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none"
-        />
+        <div className="flex gap-2">
+          <input
+            ref={nameRef}
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={handleNameBlur}
+            onKeyDown={handleKeyDown}
+            placeholder="Tag name..."
+            className="flex-1 rounded-lg border border-surface-700/80 bg-surface-800/60 px-3 py-2 text-sm font-medium text-white placeholder-surface-600 backdrop-blur-sm transition-all duration-200 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none"
+          />
+          <div className="flex rounded-lg border border-surface-700/80 overflow-hidden divide-x divide-surface-700/80">
+            {TAG_TYPES.map((t) => (
+              <button
+                key={t}
+                onClick={() => onUpdate(tag.id, { type: t as TagType })}
+                className={`px-2.5 py-1.5 text-xs font-medium capitalize cursor-pointer transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:outline-none ${
+                  tag.type === t
+                    ? "bg-emerald-600/40 text-emerald-400"
+                    : "bg-surface-800/60 text-surface-500 hover:text-surface-300"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
         <input
           type="text"
           value={description}

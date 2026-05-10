@@ -23,21 +23,24 @@ db.exec(`
     id TEXT PRIMARY KEY, session_id TEXT NOT NULL, flag TEXT NOT NULL,
     guess TEXT, correct INTEGER NOT NULL, forgotten INTEGER NOT NULL DEFAULT 0,
     confidence INTEGER NOT NULL, reaction_time_ms INTEGER NOT NULL,
-    ts TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    ts TEXT NOT NULL, accidental INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (session_id) REFERENCES sessions(id)
   );
   CREATE TABLE IF NOT EXISTS pick_flag_attempts (
     id TEXT PRIMARY KEY, session_id TEXT NOT NULL, flag TEXT NOT NULL,
     guess TEXT NOT NULL, options TEXT NOT NULL, correct INTEGER NOT NULL,
     confidence INTEGER NOT NULL, reaction_time_ms INTEGER NOT NULL,
-    ts TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    ts TEXT NOT NULL, accidental INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (session_id) REFERENCES sessions(id)
   );
   CREATE TABLE IF NOT EXISTS pick_country_attempts (
     id TEXT PRIMARY KEY, session_id TEXT NOT NULL, flag TEXT NOT NULL,
     guess TEXT NOT NULL, options TEXT NOT NULL, correct INTEGER NOT NULL,
     confidence INTEGER NOT NULL, reaction_time_ms INTEGER NOT NULL,
-    ts TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    ts TEXT NOT NULL, accidental INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (session_id) REFERENCES sessions(id)
   );
   CREATE TABLE IF NOT EXISTS flag_progress (
@@ -53,6 +56,7 @@ db.exec(`
     id TEXT PRIMARY KEY, name TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
     description TEXT NOT NULL DEFAULT '',
+    type TEXT NOT NULL DEFAULT 'group',
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE TABLE IF NOT EXISTS flag_tags (
@@ -62,6 +66,18 @@ db.exec(`
     PRIMARY KEY (flag, tag_id)
   );
 `);
+
+// Migrations for older databases
+const tagCols = db.prepare("PRAGMA table_info(tags)").all() as { name: string }[];
+if (!tagCols.some((c) => c.name === "type")) {
+  db.exec("ALTER TABLE tags ADD COLUMN type TEXT NOT NULL DEFAULT 'group'");
+}
+for (const table of ["classic_attempts", "pick_flag_attempts", "pick_country_attempts"]) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === "accidental")) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN accidental INTEGER NOT NULL DEFAULT 0`);
+  }
+}
 
 function uuid() { return crypto.randomUUID(); }
 function randomInt(min: number, max: number) { return Math.floor(Math.random() * (max - min + 1)) + min; }
@@ -98,26 +114,36 @@ db.exec(`
 console.log("Creating tags...");
 
 const tagData = [
-  { id: uuid(), name: "Flags you should just know", description: "The classics - everyone knows these", sort_order: 0 },
-  { id: uuid(), name: "Word association wizardry", description: "The country name literally tells you the colours", sort_order: 1 },
-  { id: uuid(), name: "The tricolour squad", description: "Three vertical or horizontal stripes - mix and match!", sort_order: 2 },
-  { id: uuid(), name: "Spot the difference", description: "Flags that are basically identical with tiny differences", sort_order: 3 },
-  { id: uuid(), name: "Cool unique designs", description: "Flags so distinctive you can't forget them", sort_order: 4 },
-  { id: uuid(), name: "Stars & celestial vibes", description: "Moons, stars, suns, and cosmic energy", sort_order: 5 },
-  { id: uuid(), name: "Cross gang", description: "Nordic crosses, Swiss crosses, all the crosses", sort_order: 6 },
-  { id: uuid(), name: "Animals & nature", description: "Eagles, lions, dragons, and leafy friends", sort_order: 7 },
-  { id: uuid(), name: "The red family", description: "So much red it hurts your eyes", sort_order: 8 },
-  { id: uuid(), name: "Union Jack offspring", description: "Countries that kept a bit of Britain in the corner", sort_order: 9 },
-  { id: uuid(), name: "Pan-African colours", description: "Red, yellow, green - the holy trinity", sort_order: 10 },
-  { id: uuid(), name: "Crescent club", description: "Islamic crescent moon representation", sort_order: 11 },
-  { id: uuid(), name: "Island life", description: "Flags from island nations with beach vibes", sort_order: 12 },
-  { id: uuid(), name: "My nemesis flags", description: "I will NEVER learn these properly", sort_order: 13 },
-  { id: uuid(), name: "Weirdly satisfying", description: "Flags that just look really nice", sort_order: 14 },
+  { id: uuid(), name: "Flags you should just know", description: "The classics - everyone knows these", sort_order: 0, type: "group" },
+  { id: uuid(), name: "Word association wizardry", description: "The country name literally tells you the colours", sort_order: 1, type: "group" },
+  { id: uuid(), name: "The tricolour squad", description: "Three vertical or horizontal stripes - mix and match!", sort_order: 2, type: "group" },
+  { id: uuid(), name: "Spot the difference", description: "Flags that are basically identical with tiny differences", sort_order: 3, type: "group" },
+  { id: uuid(), name: "Cool unique designs", description: "Flags so distinctive you can't forget them", sort_order: 4, type: "group" },
+  { id: uuid(), name: "Stars & celestial vibes", description: "Moons, stars, suns, and cosmic energy", sort_order: 5, type: "group" },
+  { id: uuid(), name: "Cross gang", description: "Nordic crosses, Swiss crosses, all the crosses", sort_order: 6, type: "group" },
+  { id: uuid(), name: "Animals & nature", description: "Eagles, lions, dragons, and leafy friends", sort_order: 7, type: "group" },
+  { id: uuid(), name: "The red family", description: "So much red it hurts your eyes", sort_order: 8, type: "group" },
+  { id: uuid(), name: "Union Jack offspring", description: "Countries that kept a bit of Britain in the corner", sort_order: 9, type: "group" },
+  { id: uuid(), name: "Pan-African colours", description: "Red, yellow, green - the holy trinity", sort_order: 10, type: "group" },
+  { id: uuid(), name: "Crescent club", description: "Islamic crescent moon representation", sort_order: 11, type: "group" },
+  { id: uuid(), name: "Island life", description: "Flags from island nations with beach vibes", sort_order: 12, type: "group" },
+  { id: uuid(), name: "My nemesis flags", description: "I will NEVER learn these properly", sort_order: 13, type: "group" },
+  { id: uuid(), name: "Weirdly satisfying", description: "Flags that just look really nice", sort_order: 14, type: "group" },
+  // Similar tags — lookalike flag groups shown side-by-side
+  { id: uuid(), name: "Ireland vs Ivory Coast", description: "Green-white-orange reversed", sort_order: 15, type: "similar" },
+  { id: uuid(), name: "Chad vs Romania", description: "Nearly identical blue-yellow-red tricolours", sort_order: 16, type: "similar" },
+  { id: uuid(), name: "Monaco vs Indonesia vs Poland", description: "Red and white halves in various orientations", sort_order: 17, type: "similar" },
+  { id: uuid(), name: "Australia vs New Zealand", description: "Union Jack + Southern Cross siblings", sort_order: 18, type: "similar" },
+  { id: uuid(), name: "Norway vs Iceland", description: "Nordic crosses with swapped colour schemes", sort_order: 19, type: "similar" },
+  { id: uuid(), name: "Mali vs Guinea", description: "Reversed green-yellow-red tricolours", sort_order: 20, type: "similar" },
+  { id: uuid(), name: "Senegal vs Cameroon", description: "Green-yellow-red verticals with different emblems", sort_order: 21, type: "similar" },
+  { id: uuid(), name: "Slovenia vs Slovakia", description: "White-blue-red with similar coats of arms", sort_order: 22, type: "similar" },
+  { id: uuid(), name: "Hungary vs Italy vs Bulgaria", description: "Same colours, different orientations", sort_order: 23, type: "similar" },
 ];
 
-const insertTag = db.prepare(`INSERT INTO tags (id, name, sort_order, description, updated_at) VALUES (?, ?, ?, ?, ?)`);
+const insertTag = db.prepare(`INSERT INTO tags (id, name, sort_order, description, type, updated_at) VALUES (?, ?, ?, ?, ?, ?)`);
 for (const t of tagData) {
-  insertTag.run(t.id, t.name, t.sort_order, t.description, now);
+  insertTag.run(t.id, t.name, t.sort_order, t.description, t.type, now);
 }
 
 // ── Flag-tag assignments (every flag gets at least one tag) ─
@@ -156,6 +182,19 @@ const tagAssignments: Record<string, string[]> = {
   [tagData[14].id]: ["za", "np", "bt", "kz", "sz", "br", "bs", "sc", "ag", "mz", "ge", "kr", "jp", "ca", "mk", "ba"],
 };
 
+// Similar tag assignments (flags can belong to multiple tags including these)
+const similarAssignments: Record<string, string[]> = {
+  [tagData[15].id]: ["ie", "ci"],           // Ireland vs Ivory Coast
+  [tagData[16].id]: ["td", "ro"],           // Chad vs Romania
+  [tagData[17].id]: ["mc", "id", "pl"],     // Monaco vs Indonesia vs Poland
+  [tagData[18].id]: ["au", "nz"],           // Australia vs New Zealand
+  [tagData[19].id]: ["no", "is"],           // Norway vs Iceland
+  [tagData[20].id]: ["ml", "gn"],           // Mali vs Guinea
+  [tagData[21].id]: ["sn", "cm"],           // Senegal vs Cameroon
+  [tagData[22].id]: ["si", "sk"],           // Slovenia vs Slovakia
+  [tagData[23].id]: ["hu", "it", "bg"],     // Hungary vs Italy vs Bulgaria
+};
+
 const insertFlagTag = db.prepare(`INSERT OR IGNORE INTO flag_tags (flag, tag_id, updated_at) VALUES (?, ?, ?)`);
 
 // Assign each flag to its FIRST matching tag only (one tag per flag)
@@ -165,6 +204,15 @@ for (const [tagId, codes] of Object.entries(tagAssignments)) {
     if (allFlagCodes.includes(code) && !assignedFlags.has(code)) {
       insertFlagTag.run(code, tagId, now);
       assignedFlags.add(code);
+    }
+  }
+}
+
+// Assign similar tags (flags can be in both a group and a similar tag)
+for (const [tagId, codes] of Object.entries(similarAssignments)) {
+  for (const code of codes) {
+    if (allFlagCodes.includes(code)) {
+      insertFlagTag.run(code, tagId, now);
     }
   }
 }
@@ -439,6 +487,7 @@ const config = {
   show_end_slide: true,
   show_analytics: true,
   show_mnemonics: true,
+  fragment_delay_ms: 500,
 };
 
 db.prepare(`INSERT OR REPLACE INTO settings (key, value, type, label, category) VALUES (?, ?, ?, ?, ?)`).run(

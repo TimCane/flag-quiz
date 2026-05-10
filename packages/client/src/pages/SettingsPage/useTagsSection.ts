@@ -23,6 +23,7 @@ export function useTagsSection() {
       name: "",
       sort_order: tags.length,
       description: "",
+      type: "group",
       updated_at: now,
     };
 
@@ -38,7 +39,7 @@ export function useTagsSection() {
   }, [tags.length]);
 
   const updateTag = useCallback(
-    async (id: string, updates: Partial<Pick<Tag, "name" | "description">>) => {
+    async (id: string, updates: Partial<Pick<Tag, "name" | "description" | "type">>) => {
       const tag = tags.find((t) => t.id === id);
       if (!tag) return;
 
@@ -55,6 +56,7 @@ export function useTagsSection() {
           name: updated.name,
           sort_order: updated.sort_order,
           description: updated.description,
+          type: updated.type,
           updated_at: updated.updated_at,
         });
       } catch {

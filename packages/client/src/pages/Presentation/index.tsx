@@ -42,6 +42,9 @@ function formatDifficulty(d: number): { label: string; color: string } {
   return { label: "Hard", color: "text-red-400 border-red-700" };
 }
 
+/** Reveal.js is configured with this width — used to calculate column sizes for side-by-side layouts */
+const REVEAL_WIDTH = 1920;
+
 function fsrsStatusPills(state: number, stability: number | null, difficulty: number | null, due: string | null) {
   const s = FSRS_STATE_STYLES[state] || FSRS_STATE_STYLES[0];
   return (
@@ -66,6 +69,57 @@ function fsrsStatusPills(state: number, stability: number | null, difficulty: nu
           {formatDue(due).label}
         </span>
       )}
+    </>
+  );
+}
+
+interface FlagAnalyticsProps {
+  flag: { code: string; accuracy: number | null; attemptCount: number; avgReactionTimeMs: number | null; fsrsState: number; fsrsStability: number | null; fsrsDifficulty: number | null; fsrsDue: string | null };
+  sparklines: Record<string, number[]> | undefined;
+  sparklineWidth: number;
+  sparklineHeight: number;
+  /** CSS class applied to the accuracy/attempts row */
+  textClass?: string;
+  /** CSS class applied to the reaction time label */
+  reactionClass?: string;
+  /** CSS class applied to the FSRS pills container gap */
+  pillGap?: string;
+}
+
+function FlagAnalyticsBlock({ flag, sparklines, sparklineWidth, sparklineHeight, textClass = "text-lg", reactionClass = "text-base", pillGap = "12px" }: FlagAnalyticsProps) {
+  return (
+    <>
+      <div className="fragment mt-4" data-fragment-index="2">
+        <div style={{ display: "flex", alignItems: "center", gap: "20px", justifyContent: "center" }} className={textClass}>
+          <span className={`font-mono font-bold ${
+            flag.accuracy !== null && flag.accuracy >= 80 ? "text-emerald-400"
+              : flag.accuracy !== null && flag.accuracy >= 50 ? "text-amber-400"
+              : "text-red-400"
+          }`}>
+            {flag.accuracy !== null ? `${flag.accuracy}%` : "—"}
+          </span>
+          <span className="text-surface-500">
+            {flag.attemptCount} attempt{flag.attemptCount !== 1 ? "s" : ""}
+          </span>
+        </div>
+        {sparklines?.[flag.code] && (
+          <div className="mt-3 flex justify-center">
+            <Sparkline data={sparklines[flag.code]} width={sparklineWidth} height={sparklineHeight} />
+          </div>
+        )}
+        {flag.avgReactionTimeMs !== null && (
+          <p className={`mt-2 ${reactionClass} text-surface-500`}>
+            Avg. <span className="font-mono font-bold text-surface-300">
+              {(flag.avgReactionTimeMs / 1000).toFixed(1)}s
+            </span>
+          </p>
+        )}
+      </div>
+      <div className="fragment mt-3" data-fragment-index="3">
+        <div style={{ display: "flex", justifyContent: "center", gap: pillGap, flexWrap: "wrap" }}>
+          {fsrsStatusPills(flag.fsrsState, flag.fsrsStability, flag.fsrsDifficulty, flag.fsrsDue)}
+        </div>
+      </div>
     </>
   );
 }
@@ -232,8 +286,49 @@ export function Presentation() {
               </p>
             </section>
 
-            {/* Individual flag slides */}
-            {group.flags.map((flag) => (
+            {group.tag.type === "similar" && group.flags.length > 1 ? (
+              /* Similar tag: all flags side-by-side on one slide */
+              <section>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", gap: "48px", flexWrap: "wrap" }}>
+                  {group.flags.map((flag) => {
+                    const colWidth = Math.min(400, Math.floor(REVEAL_WIDTH / group.flags.length - 60));
+                    const imgHeight = group.flags.length <= 3 ? "220px" : "160px";
+                    const nameSize = group.flags.length > 4 ? "text-2xl" : "text-3xl";
+                    return (
+                    <div key={flag.code} style={{ textAlign: "center", maxWidth: `${colWidth}px` }}>
+                      <div className="flag-container" style={{ display: "inline-block" }}>
+                        <img
+                          src={`/flags/${flag.code}.png`}
+                          alt={flag.name}
+                          className="flag-image"
+                          style={{ height: imgHeight }}
+                        />
+                      </div>
+                      <h3 className={`fragment ${nameSize} font-bold mt-4`} data-fragment-index="0">{flag.name}</h3>
+                      {config.show_mnemonics && flag.mnemonic && (
+                        <p className="fragment text-base text-surface-400 mt-2 italic" data-fragment-index="1" style={{ maxWidth: `${colWidth}px` }}>
+                          &ldquo;{flag.mnemonic}&rdquo;
+                        </p>
+                      )}
+                      {config.show_analytics && flag.attemptCount > 0 && (
+                        <FlagAnalyticsBlock
+                          flag={flag}
+                          sparklines={analyticsData?.sparklines}
+                          sparklineWidth={colWidth - 40}
+                          sparklineHeight={30}
+                          textClass="text-sm"
+                          reactionClass="text-xs"
+                          pillGap="6px"
+                        />
+                      )}
+                    </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : (
+              /* Group tag (or similar with only 1 flag): one slide per flag */
+              group.flags.map((flag) => (
               <section key={flag.code}>
                 {/* Top row: flag left, info right */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "60px" }}>
@@ -253,59 +348,33 @@ export function Presentation() {
                     )}
 
                     {config.show_analytics && flag.attemptCount > 0 && (
-                      <div className="fragment mt-4" data-fragment-index="2">
-                        <div style={{ display: "flex", alignItems: "center", gap: "20px" }} className="text-lg">
-                          <span className={`font-mono font-bold ${
-                            flag.accuracy !== null && flag.accuracy >= 80 ? "text-emerald-400"
-                              : flag.accuracy !== null && flag.accuracy >= 50 ? "text-amber-400"
-                              : "text-red-400"
-                          }`}>
-                            {flag.accuracy !== null ? `${flag.accuracy}%` : "—"} accuracy
-                          </span>
-                          <span className="text-surface-500">
-                            {flag.attemptCount} attempt{flag.attemptCount !== 1 ? "s" : ""}
-                          </span>
-                        </div>
-                        {analyticsData?.sparklines[flag.code] && (
-                          <div className="mt-3">
-                            <Sparkline data={analyticsData.sparklines[flag.code]} width={300} height={40} />
-                          </div>
-                        )}
-                        {flag.avgReactionTimeMs !== null && (
-                          <p className="mt-2 text-base text-surface-500">
-                            Avg. reaction time: <span className="font-mono font-bold text-surface-300">
-                              {(flag.avgReactionTimeMs / 1000).toFixed(1)}s
-                            </span>
-                          </p>
-                        )}
-                      </div>
+                      <FlagAnalyticsBlock
+                        flag={flag}
+                        sparklines={analyticsData?.sparklines}
+                        sparklineWidth={300}
+                        sparklineHeight={40}
+                      />
                     )}
                   </div>
                 </div>
 
-                {/* Bottom row: FSRS pills + confusions — all in one fragment with stats above */}
-                {config.show_analytics && flag.attemptCount > 0 && (
-                  <div className="fragment" data-fragment-index="3" style={{ marginTop: "40px" }}>
-                    <div style={{ display: "flex", justifyContent: "center", gap: "12px", flexWrap: "wrap" }}>
-                      {fsrsStatusPills(flag.fsrsState, flag.fsrsStability, flag.fsrsDifficulty, flag.fsrsDue)}
-                    </div>
-                    {flag.confusions.length > 0 && (
-                      <div style={{ marginTop: "24px" }}>
-                        <p className="text-sm text-surface-500" style={{ marginBottom: "10px" }}>Often confused with</p>
-                        <div style={{ display: "flex", justifyContent: "center", gap: "16px" }}>
-                          {flag.confusions.map((c) => (
-                            <div key={c.code} className="pres-confusion-card">
-                              <img src={`/flags/${c.code}.png`} alt={c.name} />
-                              <span className="text-xs text-surface-400">{c.name}</span>
-                            </div>
-                          ))}
+                {/* Bottom row: confusions */}
+                {config.show_analytics && flag.attemptCount > 0 && flag.confusions.length > 0 && (
+                  <div className="fragment" data-fragment-index="4" style={{ marginTop: "40px" }}>
+                    <p className="text-sm text-surface-500" style={{ marginBottom: "10px" }}>Often confused with</p>
+                    <div style={{ display: "flex", justifyContent: "center", gap: "16px" }}>
+                      {flag.confusions.map((c) => (
+                        <div key={c.code} className="pres-confusion-card">
+                          <img src={`/flags/${c.code}.png`} alt={c.name} />
+                          <span className="text-xs text-surface-400">{c.name}</span>
                         </div>
-                      </div>
-                    )}
+                      ))}
+                    </div>
                   </div>
                 )}
               </section>
-            ))}
+              ))
+            )}
           </section>
         ))}
 

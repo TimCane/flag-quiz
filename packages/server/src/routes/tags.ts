@@ -30,8 +30,8 @@ export function tagRoutes(db: Database.Database): Hono {
 
     const d = parsed.data;
     db.prepare(
-      `INSERT INTO tags (id, name, sort_order, description, updated_at) VALUES (?, ?, ?, ?, ?)`,
-    ).run(d.id, d.name, d.sort_order, d.description, d.updated_at);
+      `INSERT INTO tags (id, name, sort_order, description, type, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(d.id, d.name, d.sort_order, d.description, d.type, d.updated_at);
 
     return c.json({ ok: true, id: d.id }, 201);
   });
@@ -75,8 +75,8 @@ export function tagRoutes(db: Database.Database): Hono {
 
     const d = parsed.data;
     db.prepare(
-      `UPDATE tags SET name = ?, sort_order = ?, description = ?, updated_at = ? WHERE id = ?`,
-    ).run(d.name, d.sort_order, d.description, d.updated_at, id);
+      `UPDATE tags SET name = ?, sort_order = ?, description = ?, type = ?, updated_at = ? WHERE id = ?`,
+    ).run(d.name, d.sort_order, d.description, d.type, d.updated_at, id);
 
     return c.json({ ok: true });
   });

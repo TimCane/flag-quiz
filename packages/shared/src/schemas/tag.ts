@@ -1,10 +1,14 @@
 import { z } from "zod";
 
+export const TAG_TYPES = ["group", "similar"] as const;
+export type TagType = (typeof TAG_TYPES)[number];
+
 export const TagSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(100),
   sort_order: z.number().int(),
   description: z.string(),
+  type: z.enum(TAG_TYPES).default("group"),
   updated_at: z.string().datetime(),
 });
 
@@ -16,6 +20,7 @@ export const UpdateTagSchema = z.object({
   name: z.string().min(1).max(100),
   sort_order: z.number().int(),
   description: z.string(),
+  type: z.enum(TAG_TYPES).default("group"),
   updated_at: z.string().datetime(),
 });
 
