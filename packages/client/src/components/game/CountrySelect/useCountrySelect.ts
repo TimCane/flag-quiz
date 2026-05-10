@@ -16,7 +16,7 @@ export function useCountrySelect({ onSelect }: UseCountrySelectProps) {
 
   const filtered = query
     ? flags.filter((f) => f.name.toLowerCase().includes(query.toLowerCase()))
-    : flags;
+    : [];
 
   useEffect(() => {
     setHighlightIndex(0);
@@ -95,7 +95,7 @@ export function useCountrySelect({ onSelect }: UseCountrySelectProps) {
   }
 
   function handleFocus() {
-    setIsOpen(true);
+    if (query) setIsOpen(true);
   }
 
   function handleBlur() {
