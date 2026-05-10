@@ -23,8 +23,8 @@ export function attemptRoutes(db: Database.Database): Hono {
 
     const d = parsed.data;
     const stmt = db.prepare(`
-      INSERT INTO classic_attempts (id, session_id, flag, guess, correct, forgotten, confidence, reaction_time_ms, ts)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO classic_attempts (id, session_id, flag, guess, correct, forgotten, confidence, reaction_time_ms, ts, accidental)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -36,7 +36,8 @@ export function attemptRoutes(db: Database.Database): Hono {
       d.forgotten ? 1 : 0,
       d.confidence,
       d.reaction_time_ms,
-      d.ts
+      d.ts,
+      d.accidental ? 1 : 0
     );
 
     return c.json({ ok: true, id: d.id }, 201);
@@ -53,8 +54,8 @@ export function attemptRoutes(db: Database.Database): Hono {
 
     const d = parsed.data;
     const stmt = db.prepare(`
-      INSERT INTO pick_flag_attempts (id, session_id, flag, guess, options, correct, confidence, reaction_time_ms, ts)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO pick_flag_attempts (id, session_id, flag, guess, options, correct, confidence, reaction_time_ms, ts, accidental)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -66,7 +67,8 @@ export function attemptRoutes(db: Database.Database): Hono {
       d.correct ? 1 : 0,
       d.confidence,
       d.reaction_time_ms,
-      d.ts
+      d.ts,
+      d.accidental ? 1 : 0
     );
 
     return c.json({ ok: true, id: d.id }, 201);
@@ -83,8 +85,8 @@ export function attemptRoutes(db: Database.Database): Hono {
 
     const d = parsed.data;
     const stmt = db.prepare(`
-      INSERT INTO pick_country_attempts (id, session_id, flag, guess, options, correct, confidence, reaction_time_ms, ts)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO pick_country_attempts (id, session_id, flag, guess, options, correct, confidence, reaction_time_ms, ts, accidental)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -96,7 +98,8 @@ export function attemptRoutes(db: Database.Database): Hono {
       d.correct ? 1 : 0,
       d.confidence,
       d.reaction_time_ms,
-      d.ts
+      d.ts,
+      d.accidental ? 1 : 0
     );
 
     return c.json({ ok: true, id: d.id }, 201);
@@ -107,21 +110,21 @@ export function attemptRoutes(db: Database.Database): Hono {
     const wrong_guesses: { flag: string; guess: string }[] = [];
 
     const classicStmt = db.prepare(
-      `SELECT flag, guess FROM classic_attempts WHERE correct = 0 AND guess IS NOT NULL AND guess != ''`
+      `SELECT flag, guess FROM classic_attempts WHERE correct = 0 AND accidental = 0 AND guess IS NOT NULL AND guess != ''`
     );
     for (const row of classicStmt.all() as { flag: string; guess: string }[]) {
       wrong_guesses.push(row);
     }
 
     const pickFlagStmt = db.prepare(
-      `SELECT flag, guess FROM pick_flag_attempts WHERE correct = 0`
+      `SELECT flag, guess FROM pick_flag_attempts WHERE correct = 0 AND accidental = 0`
     );
     for (const row of pickFlagStmt.all() as { flag: string; guess: string }[]) {
       wrong_guesses.push(row);
     }
 
     const pickCountryStmt = db.prepare(
-      `SELECT flag, guess FROM pick_country_attempts WHERE correct = 0`
+      `SELECT flag, guess FROM pick_country_attempts WHERE correct = 0 AND accidental = 0`
     );
     for (const row of pickCountryStmt.all() as { flag: string; guess: string }[]) {
       wrong_guesses.push(row);

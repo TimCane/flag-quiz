@@ -13,9 +13,9 @@ export function statsRoutes(db: Database.Database): Hono {
       const totalAttempts = db
         .prepare(
           `SELECT
-            (SELECT COUNT(*) FROM classic_attempts) +
-            (SELECT COUNT(*) FROM pick_flag_attempts) +
-            (SELECT COUNT(*) FROM pick_country_attempts) AS total`
+            (SELECT COUNT(*) FROM classic_attempts WHERE accidental = 0) +
+            (SELECT COUNT(*) FROM pick_flag_attempts WHERE accidental = 0) +
+            (SELECT COUNT(*) FROM pick_country_attempts WHERE accidental = 0) AS total`
         )
         .get() as { total: number };
 
@@ -28,11 +28,11 @@ export function statsRoutes(db: Database.Database): Hono {
       const flagsAttempted = db
         .prepare(
           `SELECT COUNT(DISTINCT flag) AS total FROM (
-            SELECT flag FROM classic_attempts
+            SELECT flag FROM classic_attempts WHERE accidental = 0
             UNION
-            SELECT flag FROM pick_flag_attempts
+            SELECT flag FROM pick_flag_attempts WHERE accidental = 0
             UNION
-            SELECT flag FROM pick_country_attempts
+            SELECT flag FROM pick_country_attempts WHERE accidental = 0
           )`
         )
         .get() as { total: number };
@@ -43,19 +43,19 @@ export function statsRoutes(db: Database.Database): Hono {
           `SELECT
             CASE
               WHEN (
-                (SELECT COUNT(*) FROM classic_attempts) +
-                (SELECT COUNT(*) FROM pick_flag_attempts) +
-                (SELECT COUNT(*) FROM pick_country_attempts)
+                (SELECT COUNT(*) FROM classic_attempts WHERE accidental = 0) +
+                (SELECT COUNT(*) FROM pick_flag_attempts WHERE accidental = 0) +
+                (SELECT COUNT(*) FROM pick_country_attempts WHERE accidental = 0)
               ) = 0 THEN 0
               ELSE ROUND(
                 (
-                  (SELECT SUM(correct) FROM classic_attempts) +
-                  (SELECT SUM(correct) FROM pick_flag_attempts) +
-                  (SELECT SUM(correct) FROM pick_country_attempts)
+                  (SELECT SUM(correct) FROM classic_attempts WHERE accidental = 0) +
+                  (SELECT SUM(correct) FROM pick_flag_attempts WHERE accidental = 0) +
+                  (SELECT SUM(correct) FROM pick_country_attempts WHERE accidental = 0)
                 ) * 100.0 / (
-                  (SELECT COUNT(*) FROM classic_attempts) +
-                  (SELECT COUNT(*) FROM pick_flag_attempts) +
-                  (SELECT COUNT(*) FROM pick_country_attempts)
+                  (SELECT COUNT(*) FROM classic_attempts WHERE accidental = 0) +
+                  (SELECT COUNT(*) FROM pick_flag_attempts WHERE accidental = 0) +
+                  (SELECT COUNT(*) FROM pick_country_attempts WHERE accidental = 0)
                 ),
                 1
               )
@@ -105,13 +105,13 @@ export function statsRoutes(db: Database.Database): Hono {
         MAX(last_seen) AS last_seen
       FROM (
         SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt, MAX(ts) AS last_seen
-        FROM classic_attempts GROUP BY flag
+        FROM classic_attempts WHERE accidental = 0 GROUP BY flag
         UNION ALL
         SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt, MAX(ts) AS last_seen
-        FROM pick_flag_attempts GROUP BY flag
+        FROM pick_flag_attempts WHERE accidental = 0 GROUP BY flag
         UNION ALL
         SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt, MAX(ts) AS last_seen
-        FROM pick_country_attempts GROUP BY flag
+        FROM pick_country_attempts WHERE accidental = 0 GROUP BY flag
       )
       GROUP BY flag
       ORDER BY flag ASC
@@ -126,11 +126,11 @@ export function statsRoutes(db: Database.Database): Hono {
 
     const rows = db.prepare(`
       SELECT guess, COUNT(*) AS count FROM (
-        SELECT guess FROM classic_attempts WHERE flag = ? AND correct = 0 AND guess IS NOT NULL AND guess != ''
+        SELECT guess FROM classic_attempts WHERE accidental = 0 AND flag = ? AND correct = 0 AND guess IS NOT NULL AND guess != ''
         UNION ALL
-        SELECT guess FROM pick_flag_attempts WHERE flag = ? AND correct = 0
+        SELECT guess FROM pick_flag_attempts WHERE accidental = 0 AND flag = ? AND correct = 0
         UNION ALL
-        SELECT guess FROM pick_country_attempts WHERE flag = ? AND correct = 0
+        SELECT guess FROM pick_country_attempts WHERE accidental = 0 AND flag = ? AND correct = 0
       )
       GROUP BY guess
       ORDER BY count DESC
@@ -148,11 +148,11 @@ export function statsRoutes(db: Database.Database): Hono {
         SUM(correct) AS correct_count,
         ROUND(SUM(correct) * 100.0 / COUNT(*), 1) AS accuracy
       FROM (
-        SELECT ts, correct FROM classic_attempts
+        SELECT ts, correct FROM classic_attempts WHERE accidental = 0
         UNION ALL
-        SELECT ts, correct FROM pick_flag_attempts
+        SELECT ts, correct FROM pick_flag_attempts WHERE accidental = 0
         UNION ALL
-        SELECT ts, correct FROM pick_country_attempts
+        SELECT ts, correct FROM pick_country_attempts WHERE accidental = 0
       )
       GROUP BY date(ts)
       ORDER BY day ASC
@@ -171,11 +171,11 @@ export function statsRoutes(db: Database.Database): Hono {
         SUM(cnt) AS attempt_count,
         SUM(correct_cnt) AS correct_count
       FROM (
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM classic_attempts GROUP BY flag
+        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM classic_attempts WHERE accidental = 0 GROUP BY flag
         UNION ALL
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM pick_flag_attempts GROUP BY flag
+        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM pick_flag_attempts WHERE accidental = 0 GROUP BY flag
         UNION ALL
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM pick_country_attempts GROUP BY flag
+        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM pick_country_attempts WHERE accidental = 0 GROUP BY flag
       )
       GROUP BY flag
     `).all() as { flag: string; attempt_count: number; correct_count: number }[];
@@ -187,11 +187,11 @@ export function statsRoutes(db: Database.Database): Hono {
   app.get("/stats/confused-pairs", (c) => {
     const rows = db.prepare(`
       SELECT flag, guess, COUNT(*) AS count FROM (
-        SELECT flag, guess FROM classic_attempts WHERE correct = 0 AND guess IS NOT NULL AND guess != ''
+        SELECT flag, guess FROM classic_attempts WHERE accidental = 0 AND correct = 0 AND guess IS NOT NULL AND guess != ''
         UNION ALL
-        SELECT flag, guess FROM pick_flag_attempts WHERE correct = 0
+        SELECT flag, guess FROM pick_flag_attempts WHERE accidental = 0 AND correct = 0
         UNION ALL
-        SELECT flag, guess FROM pick_country_attempts WHERE correct = 0
+        SELECT flag, guess FROM pick_country_attempts WHERE accidental = 0 AND correct = 0
       )
       GROUP BY flag, guess
       ORDER BY count DESC
@@ -205,11 +205,11 @@ export function statsRoutes(db: Database.Database): Hono {
   app.get("/stats/confidence", (c) => {
     const rows = db.prepare(`
       SELECT confidence, COUNT(*) AS count FROM (
-        SELECT confidence FROM classic_attempts
+        SELECT confidence FROM classic_attempts WHERE accidental = 0
         UNION ALL
-        SELECT confidence FROM pick_flag_attempts
+        SELECT confidence FROM pick_flag_attempts WHERE accidental = 0
         UNION ALL
-        SELECT confidence FROM pick_country_attempts
+        SELECT confidence FROM pick_country_attempts WHERE accidental = 0
       )
       GROUP BY confidence
       ORDER BY confidence ASC
@@ -225,11 +225,11 @@ export function statsRoutes(db: Database.Database): Hono {
         date(ts) AS day,
         COUNT(*) AS count
       FROM (
-        SELECT ts FROM classic_attempts
+        SELECT ts FROM classic_attempts WHERE accidental = 0
         UNION ALL
-        SELECT ts FROM pick_flag_attempts
+        SELECT ts FROM pick_flag_attempts WHERE accidental = 0
         UNION ALL
-        SELECT ts FROM pick_country_attempts
+        SELECT ts FROM pick_country_attempts WHERE accidental = 0
       )
       GROUP BY date(ts)
       ORDER BY day ASC
@@ -242,11 +242,11 @@ export function statsRoutes(db: Database.Database): Hono {
   app.get("/stats/sparklines", (c) => {
     const rows = db.prepare(`
       SELECT flag, correct FROM (
-        SELECT flag, correct, ts FROM classic_attempts
+        SELECT flag, correct, ts FROM classic_attempts WHERE accidental = 0
         UNION ALL
-        SELECT flag, correct, ts FROM pick_flag_attempts
+        SELECT flag, correct, ts FROM pick_flag_attempts WHERE accidental = 0
         UNION ALL
-        SELECT flag, correct, ts FROM pick_country_attempts
+        SELECT flag, correct, ts FROM pick_country_attempts WHERE accidental = 0
       )
       ORDER BY flag ASC, ts ASC
     `).all() as { flag: string; correct: number }[];
@@ -269,11 +269,11 @@ export function statsRoutes(db: Database.Database): Hono {
         SUM(cnt) AS attempt_count,
         ROUND(SUM(correct_cnt) * 100.0 / SUM(cnt), 1) AS accuracy
       FROM (
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM classic_attempts GROUP BY flag
+        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM classic_attempts WHERE accidental = 0 GROUP BY flag
         UNION ALL
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM pick_flag_attempts GROUP BY flag
+        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM pick_flag_attempts WHERE accidental = 0 GROUP BY flag
         UNION ALL
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM pick_country_attempts GROUP BY flag
+        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM pick_country_attempts WHERE accidental = 0 GROUP BY flag
       )
       GROUP BY flag
       HAVING SUM(cnt) >= 3
@@ -288,9 +288,9 @@ export function statsRoutes(db: Database.Database): Hono {
   app.get("/stats/comparison", (c) => {
     const allDays = db.prepare(`
       SELECT DISTINCT date(ts) AS day FROM (
-        SELECT ts FROM classic_attempts
-        UNION ALL SELECT ts FROM pick_flag_attempts
-        UNION ALL SELECT ts FROM pick_country_attempts
+        SELECT ts FROM classic_attempts WHERE accidental = 0
+        UNION ALL SELECT ts FROM pick_flag_attempts WHERE accidental = 0
+        UNION ALL SELECT ts FROM pick_country_attempts WHERE accidental = 0
       ) ORDER BY day ASC
     `).all() as { day: string }[];
 
@@ -311,11 +311,11 @@ export function statsRoutes(db: Database.Database): Hono {
           COUNT(*) AS attempts,
           ROUND(SUM(correct) * 100.0 / COUNT(*), 1) AS accuracy
         FROM (
-          SELECT correct, ts FROM classic_attempts WHERE date(ts) >= ? AND date(ts) < ?
+          SELECT correct, ts FROM classic_attempts WHERE accidental = 0 AND date(ts) >= ? AND date(ts) < ?
           UNION ALL
-          SELECT correct, ts FROM pick_flag_attempts WHERE date(ts) >= ? AND date(ts) < ?
+          SELECT correct, ts FROM pick_flag_attempts WHERE accidental = 0 AND date(ts) >= ? AND date(ts) < ?
           UNION ALL
-          SELECT correct, ts FROM pick_country_attempts WHERE date(ts) >= ? AND date(ts) < ?
+          SELECT correct, ts FROM pick_country_attempts WHERE accidental = 0 AND date(ts) >= ? AND date(ts) < ?
         )
       `).get(startDay, endStr, startDay, endStr, startDay, endStr) as { attempts: number; accuracy: number };
     }
@@ -341,11 +341,11 @@ export function statsRoutes(db: Database.Database): Hono {
 
     // All reaction times with mode and flag
     const allRows = db.prepare(`
-      SELECT reaction_time_ms AS rt, flag, 'classic' AS mode FROM classic_attempts WHERE reaction_time_ms > 0
+      SELECT reaction_time_ms AS rt, flag, 'classic' AS mode FROM classic_attempts WHERE accidental = 0 AND reaction_time_ms > 0
       UNION ALL
-      SELECT reaction_time_ms AS rt, flag, 'pick-the-flag' AS mode FROM pick_flag_attempts WHERE reaction_time_ms > 0
+      SELECT reaction_time_ms AS rt, flag, 'pick-the-flag' AS mode FROM pick_flag_attempts WHERE accidental = 0 AND reaction_time_ms > 0
       UNION ALL
-      SELECT reaction_time_ms AS rt, flag, 'pick-the-country' AS mode FROM pick_country_attempts WHERE reaction_time_ms > 0
+      SELECT reaction_time_ms AS rt, flag, 'pick-the-country' AS mode FROM pick_country_attempts WHERE accidental = 0 AND reaction_time_ms > 0
     `).all() as { rt: number; flag: string; mode: string }[];
 
     function percentiles(times: number[]): { p25: number; p75: number } | null {
@@ -391,11 +391,11 @@ export function statsRoutes(db: Database.Database): Hono {
   app.get("/stats/reaction-times", (c) => {
     const rows = db.prepare(`
       SELECT flag, ROUND(AVG(rt)) AS avg_ms FROM (
-        SELECT flag, reaction_time_ms AS rt FROM classic_attempts WHERE reaction_time_ms > 0
+        SELECT flag, reaction_time_ms AS rt FROM classic_attempts WHERE accidental = 0 AND reaction_time_ms > 0
         UNION ALL
-        SELECT flag, reaction_time_ms AS rt FROM pick_flag_attempts WHERE reaction_time_ms > 0
+        SELECT flag, reaction_time_ms AS rt FROM pick_flag_attempts WHERE accidental = 0 AND reaction_time_ms > 0
         UNION ALL
-        SELECT flag, reaction_time_ms AS rt FROM pick_country_attempts WHERE reaction_time_ms > 0
+        SELECT flag, reaction_time_ms AS rt FROM pick_country_attempts WHERE accidental = 0 AND reaction_time_ms > 0
       )
       GROUP BY flag
     `).all() as { flag: string; avg_ms: number }[];

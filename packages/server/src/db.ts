@@ -140,6 +140,14 @@ function migrateSchema(db: Database.Database): void {
   if (!cols.some((c) => c.name === "quick")) {
     db.exec("ALTER TABLE sessions ADD COLUMN quick INTEGER NOT NULL DEFAULT 0");
   }
+
+  // Add accidental column to attempt tables if missing
+  for (const table of ["classic_attempts", "pick_flag_attempts", "pick_country_attempts"]) {
+    const tcols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!tcols.some((c) => c.name === "accidental")) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN accidental INTEGER NOT NULL DEFAULT 0`);
+    }
+  }
 }
 
 function seedSettings(db: Database.Database): void {

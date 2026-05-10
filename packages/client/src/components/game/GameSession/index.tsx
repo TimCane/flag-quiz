@@ -36,6 +36,7 @@ export function GameSession({ mode, exitCondition, quick = false, resumeSession 
     handlePickAnswer,
     handleSpeedTimeout,
     handleRate,
+    handleAccidental,
     handleQuickCorrectDone,
     handleQuickWrongNext,
     endSession,
@@ -176,10 +177,11 @@ export function GameSession({ mode, exitCondition, quick = false, resumeSession 
             mnemonic={progressMap.get(attempt.flagCode)?.mnemonic || ""}
             schedulingChoices={attempt.schedulingChoices}
             onRate={handleRate}
+            onAccidental={handleAccidental}
             tagNames={getTagNames(attempt.flagCode)}
           />
           <div className="mt-4 text-center text-xs font-medium text-surface-600">
-            Press 1-4 to rate
+            Press 1-4 to rate{!attempt.correct ? ", 0 for accidental" : ""}
           </div>
         </div>
       )}

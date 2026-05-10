@@ -13,16 +13,19 @@ const BaseAttemptSchema = z.object({
 export const ClassicAttemptSchema = BaseAttemptSchema.extend({
   guess: z.string().length(2).nullable(),
   forgotten: z.boolean(),
+  accidental: z.boolean().optional().default(false),
 });
 
 export const PickFlagAttemptSchema = BaseAttemptSchema.extend({
   guess: z.string().length(2),
   options: z.array(z.string().length(2)),
+  accidental: z.boolean().optional().default(false),
 });
 
 export const PickCountryAttemptSchema = BaseAttemptSchema.extend({
   guess: z.string().length(2),
   options: z.array(z.string().length(2)),
+  accidental: z.boolean().optional().default(false),
 });
 
 export type BaseAttempt = z.infer<typeof BaseAttemptSchema>;

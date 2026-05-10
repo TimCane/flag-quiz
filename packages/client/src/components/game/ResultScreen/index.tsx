@@ -13,6 +13,7 @@ interface ResultScreenProps {
   mnemonic: string;
   schedulingChoices: SchedulingResult[];
   onRate: (rating: Rating, mnemonic: string) => void;
+  onAccidental?: () => void;
   tagNames?: string[];
 }
 
@@ -24,6 +25,7 @@ export function ResultScreen({
   mnemonic: initialMnemonic,
   schedulingChoices,
   onRate,
+  onAccidental,
   tagNames = [],
 }: ResultScreenProps) {
   const { mnemonic, setMnemonic } = useResultScreen({ initialMnemonic });
@@ -85,6 +87,16 @@ export function ResultScreen({
           </button>
         ))}
       </div>
+
+      {/* Accidental / fat-finger button */}
+      {onAccidental && !correct && (
+        <button
+          onClick={onAccidental}
+          className="mt-3 text-sm text-surface-600 hover:text-surface-400 transition-colors cursor-pointer"
+        >
+          Accidental (don't count)
+        </button>
+      )}
     </div>
   );
 }
