@@ -144,7 +144,7 @@ export function useTagsSection() {
     const id = crypto.randomUUID();
     const newTag: Tag = {
       id,
-      name: "",
+      name: "New tag",
       sort_order: effectiveTags.length,
       description: "",
       type: "group",
