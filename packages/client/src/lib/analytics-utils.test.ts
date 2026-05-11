@@ -13,9 +13,9 @@ const mockCollection: Collection = {
     { id: "asia", name: "Asia" },
   ],
   flags: [
-    { code: "fr", name: "France", group: "europe" },
-    { code: "de", name: "Germany", group: "europe" },
-    { code: "jp", name: "Japan", group: "asia" },
+    { code: "fr", name: "France", group: "europe", colors: [], patterns: [], symbols: [], ext: "svg" },
+    { code: "de", name: "Germany", group: "europe", colors: [], patterns: [], symbols: [], ext: "svg" },
+    { code: "jp", name: "Japan", group: "asia", colors: [], patterns: [], symbols: [], ext: "svg" },
   ],
 };
 

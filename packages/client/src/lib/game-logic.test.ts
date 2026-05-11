@@ -12,7 +12,7 @@ describe("flattenConfusions", () => {
 
   it("flattens a single confusion pair", () => {
     const cm: ConfusionMap = {
-      confusions: new Map([["fr", new Map([["it", 2]])]]),
+      confusions: new Map([["fr", [["it", 2]]]]),
     };
     const result = flattenConfusions(cm);
     expect(result).toHaveLength(2);
@@ -22,8 +22,8 @@ describe("flattenConfusions", () => {
   it("deduplicates symmetric pairs (A->B and B->A)", () => {
     const cm: ConfusionMap = {
       confusions: new Map([
-        ["fr", new Map([["it", 1]])],
-        ["it", new Map([["fr", 1]])],
+        ["fr", [["it", 1]]],
+        ["it", [["fr", 1]]],
       ]),
     };
     const result = flattenConfusions(cm);
@@ -33,7 +33,7 @@ describe("flattenConfusions", () => {
 
   it("repeats pairs according to count", () => {
     const cm: ConfusionMap = {
-      confusions: new Map([["de", new Map([["at", 3]])]]),
+      confusions: new Map([["de", [["at", 3]]]]),
     };
     expect(flattenConfusions(cm)).toHaveLength(3);
   });
