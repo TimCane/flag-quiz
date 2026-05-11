@@ -12,3 +12,6 @@ build/
 
 restored.db*
 .pnpm-store/
+.cache/
+tmp/
+coverage/

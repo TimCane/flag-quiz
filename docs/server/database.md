@@ -9,6 +9,8 @@ Flag Quiz uses SQLite via the `better-sqlite3` driver. The database file is crea
 
 ## Schema
 
+All attempt and progress tables are scoped by `collection_id` to support multiple flag collections.
+
 ### sessions
 
 Stores quiz session metadata.
@@ -16,14 +18,15 @@ Stores quiz session metadata.
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | TEXT (PK) | UUID |
-| `mode` | TEXT | Game mode: CLASSIC, PICK_THE_FLAG, PICK_THE_COUNTRY |
-| `exit_condition` | TEXT | NORMAL, STREAK, or SPEED |
+| `collection_id` | TEXT | Collection identifier (e.g., "world", "us-states") |
+| `mode` | TEXT | Game mode: CLASSIC, PICK_THE_FLAG, PICK_THE_ITEM |
+| `exit_condition` | TEXT | NORMAL, STREAK, SPEED, or DUE |
 | `quick` | INTEGER | Quick mode flag (0 or 1) |
 | `started` | TEXT | ISO timestamp when session began |
 | `ended` | TEXT | ISO timestamp when session ended (null if active) |
 | `created_at` | TEXT | Auto-set to current datetime |
 
-**Indexes**: `started`, `created_at`
+**Indexes**: `collection_id`, `started`, `created_at`
 
 ### classic_attempts
 
@@ -32,8 +35,9 @@ Free-form text input attempts.
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | TEXT (PK) | UUID |
+| `collection_id` | TEXT | Collection identifier |
 | `session_id` | TEXT (FK) | References sessions.id |
-| `flag` | TEXT | 2-letter country code |
+| `flag` | TEXT | Flag code within the collection |
 | `guess` | TEXT | User's typed answer (null if skipped) |
 | `correct` | INTEGER | 1 if correct, 0 if wrong |
 | `forgotten` | INTEGER | 1 if user marked as forgotten |
@@ -41,8 +45,9 @@ Free-form text input attempts.
 | `reaction_time_ms` | INTEGER | Time taken in milliseconds |
 | `ts` | TEXT | ISO timestamp of the attempt |
 | `created_at` | TEXT | Auto-set to current datetime |
+| `accidental` | INTEGER | 1 if marked as accidental (excluded from analytics) |
 
-**Indexes**: `flag`, `session_id`, `ts`, `created_at`
+**Indexes**: `collection_id`, `(collection_id, flag)`, `session_id`, `ts`, `created_at`
 
 ### pick_flag_attempts
 
@@ -51,6 +56,7 @@ Multiple-choice attempts where the user picks the correct flag.
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | TEXT (PK) | UUID |
+| `collection_id` | TEXT | Collection identifier |
 | `session_id` | TEXT (FK) | References sessions.id |
 | `flag` | TEXT | Correct flag code |
 | `guess` | TEXT | User's chosen flag code |
@@ -60,20 +66,22 @@ Multiple-choice attempts where the user picks the correct flag.
 | `reaction_time_ms` | INTEGER | Time taken in milliseconds |
 | `ts` | TEXT | ISO timestamp |
 | `created_at` | TEXT | Auto-set |
+| `accidental` | INTEGER | 1 if marked as accidental |
 
-**Indexes**: `flag`, `session_id`, `ts`, `created_at`
+**Indexes**: `collection_id`, `(collection_id, flag)`, `session_id`, `ts`, `created_at`
 
-### pick_country_attempts
+### pick_item_attempts
 
-Multiple-choice attempts where the user picks the correct country name. Same structure as `pick_flag_attempts`.
+Multiple-choice attempts where the user picks the correct item name. Same structure as `pick_flag_attempts`.
 
 ### flag_progress
 
-FSRS spaced repetition state per flag.
+FSRS spaced repetition state per flag per collection.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `flag` | TEXT (PK) | 2-letter country code |
+| `collection_id` | TEXT (PK) | Collection identifier |
+| `flag` | TEXT (PK) | Flag code within the collection |
 | `mnemonic` | TEXT | User-written memory aid |
 | `stability` | REAL | FSRS stability parameter |
 | `difficulty` | REAL | FSRS difficulty parameter |
@@ -82,7 +90,8 @@ FSRS spaced repetition state per flag.
 | `due` | TEXT | ISO timestamp when next review is due |
 | `updated_at` | TEXT | Last update timestamp |
 
-**Indexes**: `state`, `due`
+**Primary key**: `(collection_id, flag)`
+**Indexes**: `(collection_id, state)`, `(collection_id, due)`
 
 ### settings
 
@@ -96,6 +105,31 @@ Key-value configuration store.
 | `label` | TEXT | Human-readable label |
 | `category` | TEXT | Grouping category |
 
+### tags
+
+User-defined flag groupings per collection.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | TEXT (PK) | UUID |
+| `collection_id` | TEXT | Collection identifier |
+| `name` | TEXT | Tag display name |
+| `sort_order` | INTEGER | Display ordering |
+| `description` | TEXT | Optional description |
+| `type` | TEXT | "group" or "similar" |
+| `updated_at` | TEXT | Last update timestamp |
+
+### flag_tags
+
+Junction table linking flags to tags.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `collection_id` | TEXT (PK) | Collection identifier |
+| `flag` | TEXT (PK) | Flag code |
+| `tag_id` | TEXT (PK, FK) | References tags.id (CASCADE delete) |
+| `updated_at` | TEXT | Last update timestamp |
+
 ## Initialization
 
 On startup, the server:
@@ -103,9 +137,15 @@ On startup, the server:
 1. Creates the `$DATA_DIR` directory if it doesn't exist
 2. Opens (or creates) `journal.db`
 3. Creates all tables and indexes if they don't exist
-4. Runs schema migrations (e.g., adding the `quick` column)
-5. Seeds default settings using `INSERT OR IGNORE`
+4. Runs schema migrations (adding columns like `quick`, `accidental`, `type`)
+5. Runs the multi-collection migration (adds `collection_id`, rebuilds composite PKs)
+6. Runs the country-to-item migration (renames `pick_country_attempts` → `pick_item_attempts`, updates mode values and settings keys)
+7. Seeds default settings using `INSERT OR IGNORE`
 
 ## Migrations
 
-Schema migrations are handled in `packages/server/src/db.ts` in the `migrateSchema()` function. Migrations check for missing columns using `PRAGMA table_info` and add them with `ALTER TABLE` as needed.
+Schema migrations are handled in `packages/server/src/db.ts`. Each migration is idempotent — it checks for the current state before applying changes using `PRAGMA table_info` or `sqlite_master` queries. Migrations run in this order:
+
+1. `migrateSchema()` — Adds `quick`, `accidental`, `type` columns
+2. `migrateToMultiCollection()` — Adds `collection_id` to all tables, rebuilds `flag_progress` and `flag_tags` with composite PKs
+3. `migrateCountryToItem()` — Renames `pick_country_attempts` → `pick_item_attempts`, updates session mode values and settings keys

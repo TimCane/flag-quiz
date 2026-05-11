@@ -1,10 +1,20 @@
 #!/bin/sh
 set -e
 
+# Restore the production Litestream backup into the local dev database.
+# Usage: ./scripts/download-s3-backup.sh
+#
+# Reads S3 credentials from .env at repo root. Downloads litestream if not
+# already present, restores the DB snapshot, and copies it to both local
+# data directories so it works with `pnpm dev` and `pnpm dev:server`.
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 # Load .env if present
-if [ -f .env ]; then
+if [ -f "$REPO_ROOT/.env" ]; then
   set -a
-  . ./.env
+  . "$REPO_ROOT/.env"
   set +a
 fi
 
@@ -12,68 +22,96 @@ fi
 for var in LITESTREAM_BUCKET LITESTREAM_ENDPOINT LITESTREAM_REGION LITESTREAM_ACCESS_KEY_ID LITESTREAM_SECRET_ACCESS_KEY LITESTREAM_PATH; do
   eval val=\$$var
   if [ -z "$val" ]; then
-    echo "Error: $var is not set" >&2
+    echo "Error: $var is not set (check .env)" >&2
     exit 1
   fi
 done
 
-DEST="${1:-./backup}"
-mkdir -p "$DEST"
+# Ensure litestream is available
+LITESTREAM_BIN="$REPO_ROOT/.cache/litestream"
+LITESTREAM_VERSION="0.3.13"
 
-echo "Downloading s3://${LITESTREAM_BUCKET}/${LITESTREAM_PATH}/ to ${DEST}/ ..."
+ensure_litestream() {
+  if [ -x "$LITESTREAM_BIN" ]; then
+    return
+  fi
 
-node -e "
-const { S3Client, ListObjectsV2Command, GetObjectCommand } = require('@aws-sdk/client-s3');
-const fs = require('fs');
-const path = require('path');
-const { pipeline } = require('stream/promises');
+  echo "Downloading litestream v${LITESTREAM_VERSION}..."
+  mkdir -p "$(dirname "$LITESTREAM_BIN")"
 
-const client = new S3Client({
-  endpoint: process.env.LITESTREAM_ENDPOINT,
-  region: process.env.LITESTREAM_REGION,
-  credentials: {
-    accessKeyId: process.env.LITESTREAM_ACCESS_KEY_ID,
-    secretAccessKey: process.env.LITESTREAM_SECRET_ACCESS_KEY,
-  },
-  forcePathStyle: true,
-});
+  ARCH=$(uname -m)
+  case "$ARCH" in
+    x86_64|amd64) ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+    *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
+  esac
 
-async function download() {
-  const dest = process.argv[1];
-  const prefix = process.env.LITESTREAM_PATH + '/';
-  let total = 0;
-  let token;
+  OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+  TAR_URL="https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-v${LITESTREAM_VERSION}-${OS}-${ARCH}.tar.gz"
 
-  do {
-    const list = await client.send(new ListObjectsV2Command({
-      Bucket: process.env.LITESTREAM_BUCKET,
-      Prefix: prefix,
-      ContinuationToken: token,
-    }));
+  TMP_TAR=$(mktemp)
+  curl -fsSL "$TAR_URL" -o "$TMP_TAR"
+  tar -xzf "$TMP_TAR" -C "$(dirname "$LITESTREAM_BIN")" litestream
+  chmod +x "$LITESTREAM_BIN"
+  rm -f "$TMP_TAR"
 
-    for (const obj of list.Contents || []) {
-      const relPath = obj.Key.slice(prefix.length);
-      if (!relPath) continue;
-
-      const filePath = path.join(dest, relPath);
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-
-      const res = await client.send(new GetObjectCommand({
-        Bucket: process.env.LITESTREAM_BUCKET,
-        Key: obj.Key,
-      }));
-
-      await pipeline(res.Body, fs.createWriteStream(filePath));
-      total++;
-    }
-
-    token = list.IsTruncated ? list.NextContinuationToken : undefined;
-  } while (token);
-
-  console.log('Downloaded ' + total + ' files to ' + dest);
+  echo "Installed litestream to $LITESTREAM_BIN"
 }
 
-download().catch(e => { console.error(e.message); process.exit(1); });
-" "$DEST"
+ensure_litestream
 
-echo "Done."
+# Restore to a temp path first, then copy to both data dirs
+RESTORE_PATH="$REPO_ROOT/.cache/restored.db"
+rm -f "$RESTORE_PATH" "$RESTORE_PATH-wal" "$RESTORE_PATH-shm"
+
+# Generate a temporary litestream config for the restore
+RESTORE_CONFIG=$(mktemp)
+cat > "$RESTORE_CONFIG" <<EOF
+dbs:
+  - path: ${RESTORE_PATH}
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: ${LITESTREAM_PATH}
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${LITESTREAM_REGION}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+EOF
+
+echo "Restoring s3://${LITESTREAM_BUCKET}/${LITESTREAM_PATH} ..."
+"$LITESTREAM_BIN" restore -config "$RESTORE_CONFIG" "$RESTORE_PATH"
+rm -f "$RESTORE_CONFIG"
+
+if [ ! -f "$RESTORE_PATH" ]; then
+  echo "Error: restore completed but no DB file found" >&2
+  exit 1
+fi
+
+# Copy to both data directories
+ROOT_DIR="$REPO_ROOT/data"
+SERVER_DIR="$REPO_ROOT/packages/server/data"
+
+for DIR in "$ROOT_DIR" "$SERVER_DIR"; do
+  mkdir -p "$DIR"
+  rm -f "$DIR/journal.db" "$DIR/journal.db-wal" "$DIR/journal.db-shm"
+  cp "$RESTORE_PATH" "$DIR/journal.db"
+  echo "  -> $DIR/journal.db"
+done
+
+rm -f "$RESTORE_PATH"
+
+# Sanity check
+SIZE=$(wc -c < "$ROOT_DIR/journal.db" | tr -d ' ')
+echo ""
+echo "Restored ${SIZE} bytes"
+node -e "
+const Database = require('better-sqlite3');
+const db = new Database('$ROOT_DIR/journal.db');
+const tables = db.prepare(\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\").all();
+console.log('Tables: ' + tables.map(t => t.name).join(', '));
+const sessions = db.prepare('SELECT COUNT(*) AS c FROM sessions').get();
+console.log('Sessions: ' + sessions.c);
+"
+echo ""
+echo "Ready — run: pnpm dev"
