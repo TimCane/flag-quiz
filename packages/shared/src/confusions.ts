@@ -1,4 +1,4 @@
-import { flags, flagByCode, type Flag } from "./flags.js";
+import type { Flag } from "./collections/types.js";
 
 export interface ConfusionMap {
   /** Map from flag code to array of [confused_flag_code, count] sorted by count desc */
@@ -19,7 +19,6 @@ export function buildConfusionMap(wrongGuesses: WrongGuess[]): ConfusionMap {
   for (const { flag, guess } of wrongGuesses) {
     if (!guess || flag === guess) continue;
 
-    // Bidirectional
     increment(counts, flag, guess);
     increment(counts, guess, flag);
   }
@@ -48,8 +47,10 @@ function increment(
 
 /**
  * Pick decoy options for a Pick mode round.
+ * Operates within a single collection's flag list.
  *
  * @param targetCode - The correct flag code
+ * @param flags - Flags in the active collection
  * @param confusionMap - Built from historical wrong guesses
  * @param minOptions - Minimum total options (including correct)
  * @param maxOptions - Maximum total options (including correct)
@@ -57,11 +58,12 @@ function increment(
  */
 export function pickOptions(
   targetCode: string,
+  flags: Flag[],
   confusionMap: ConfusionMap,
   minOptions: number,
   maxOptions: number,
 ): string[] {
-  const target = flagByCode.get(targetCode);
+  const target = flags.find((f) => f.code === targetCode);
   if (!target) return [targetCode];
 
   const confused = confusionMap.confusions.get(targetCode) || [];
@@ -70,7 +72,6 @@ export function pickOptions(
   const decoys: string[] = [];
   const used = new Set<string>([targetCode]);
 
-  // 1. Add historically confused flags first
   for (const [code] of confused) {
     if (decoys.length >= decoyCount) break;
     if (used.has(code)) continue;
@@ -78,9 +79,8 @@ export function pickOptions(
     decoys.push(code);
   }
 
-  // 2. Pad with visually similar flags if needed
   if (decoys.length < minOptions - 1) {
-    const similar = findSimilarFlags(target, used);
+    const similar = findSimilarFlags(target, flags, used);
     for (const code of similar) {
       if (decoys.length >= minOptions - 1) break;
       used.add(code);
@@ -88,7 +88,6 @@ export function pickOptions(
     }
   }
 
-  // 3. Last resort: random flags
   if (decoys.length < minOptions - 1) {
     const remaining = flags.filter((f) => !used.has(f.code));
     for (const f of shuffleArray(remaining)) {
@@ -107,28 +106,24 @@ export function pickOptions(
 function similarityScore(a: Flag, b: Flag): number {
   let score = 0;
 
-  // Shared colors (weighted x2)
   for (const color of a.colors) {
     if (b.colors.includes(color)) score += 2;
   }
 
-  // Shared patterns (weighted x2)
   for (const pattern of a.patterns) {
     if (b.patterns.includes(pattern)) score += 2;
   }
 
-  // Shared symbols
   for (const symbol of a.symbols) {
     if (b.symbols.includes(symbol)) score += 1;
   }
 
-  // Same continent
-  if (a.continent === b.continent) score += 1;
+  if (a.group === b.group) score += 1;
 
   return score;
 }
 
-function findSimilarFlags(target: Flag, exclude: Set<string>): string[] {
+function findSimilarFlags(target: Flag, flags: Flag[], exclude: Set<string>): string[] {
   const scored = flags
     .filter((f) => !exclude.has(f.code))
     .map((f) => ({ code: f.code, score: similarityScore(target, f) + Math.random() * 0.5 }))

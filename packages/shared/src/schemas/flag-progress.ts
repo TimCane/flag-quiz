@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { FlagCodeSchema } from "./collection.js";
 
 export const FlagProgressSchema = z.object({
-  flag: z.string().length(2),
+  flag: FlagCodeSchema,
   mnemonic: z.string(),
   stability: z.number().nullable(),
   difficulty: z.number().nullable(),
