@@ -1,143 +1,154 @@
 import { Hono } from "hono";
-import type Database from "better-sqlite3";
+import { eq, and, sql } from "drizzle-orm";
 import { CreateSessionSchema, UpdateSessionSchema } from "@flag-quiz/shared";
 import { requireAuth } from "../middleware/auth.js";
+import { requireCollection } from "../middleware/collection.js";
+import { sessions, attempts } from "../schema.js";
+import type { DrizzleDb } from "../drizzle.js";
 
-export function sessionRoutes(db: Database.Database): Hono {
-  const app = new Hono();
+export function sessionRoutes(db: DrizzleDb) {
+  return new Hono<{ Variables: { collectionId: string } }>()
+    .use("*", requireAuth)
+    .use("*", requireCollection)
+    .post("/sessions", async (c) => {
+      const collectionId = c.get("collectionId");
+      const body = await c.req.json();
+      const parsed = CreateSessionSchema.safeParse(body);
 
-  app.use("*", requireAuth);
-
-  // Create session
-  app.post("/sessions", async (c) => {
-    const body = await c.req.json();
-    const parsed = CreateSessionSchema.safeParse(body);
-
-    if (!parsed.success) {
-      return c.json({ ok: false, error: parsed.error.flatten() }, 400);
-    }
-
-    const { id, mode, exit_condition, quick, started } = parsed.data;
-
-    const stmt = db.prepare(`
-      INSERT INTO sessions (id, mode, exit_condition, quick, started)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-
-    try {
-      stmt.run(id, mode, exit_condition, quick ? 1 : 0, started);
-      return c.json({ ok: true, id }, 201);
-    } catch (err: any) {
-      if (err.message?.includes("UNIQUE constraint")) {
-        return c.json({ ok: false, error: "Session already exists" }, 409);
+      if (!parsed.success) {
+        return c.json({ ok: false as const, error: parsed.error.flatten() }, 400);
       }
-      throw err;
-    }
-  });
 
-  // Update session (set ended timestamp)
-  app.put("/sessions/:id", async (c) => {
-    const id = c.req.param("id");
-    const body = await c.req.json();
-    const parsed = UpdateSessionSchema.safeParse(body);
+      const { id, mode, exit_condition, quick, started } = parsed.data;
 
-    if (!parsed.success) {
-      return c.json({ ok: false, error: parsed.error.flatten() }, 400);
-    }
+      try {
+        db.insert(sessions)
+          .values({
+            id,
+            collection_id: collectionId,
+            mode,
+            exit_condition,
+            quick: quick ? 1 : 0,
+            started,
+          })
+          .run();
+        return c.json({ ok: true as const, id }, 201);
+      } catch (err: any) {
+        if (err.message?.includes("UNIQUE constraint")) {
+          return c.json({ ok: false as const, error: "Session already exists" }, 409);
+        }
+        throw err;
+      }
+    })
+    .put("/sessions/:id", async (c) => {
+      const collectionId = c.get("collectionId");
+      const id = c.req.param("id");
+      const body = await c.req.json();
+      const parsed = UpdateSessionSchema.safeParse(body);
 
-    const stmt = db.prepare(`UPDATE sessions SET ended = ? WHERE id = ?`);
-    const result = stmt.run(parsed.data.ended, id);
+      if (!parsed.success) {
+        return c.json({ ok: false as const, error: parsed.error.flatten() }, 400);
+      }
 
-    if (result.changes === 0) {
-      return c.json({ ok: false, error: "Session not found" }, 404);
-    }
-
-    return c.json({ ok: true });
-  });
-
-  // List sessions with attempt counts and accuracy
-  app.get("/sessions", (c) => {
-    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 200);
-    const offset = parseInt(c.req.query("offset") || "0", 10);
-
-    const stmt = db.prepare(`
-      SELECT
-        s.*,
-        COALESCE(ca.cnt, 0) + COALESCE(pf.cnt, 0) + COALESCE(pc.cnt, 0) AS attempt_count,
-        CASE
-          WHEN (COALESCE(ca.cnt, 0) + COALESCE(pf.cnt, 0) + COALESCE(pc.cnt, 0)) = 0 THEN 0
-          ELSE ROUND(
-            (COALESCE(ca.correct_cnt, 0) + COALESCE(pf.correct_cnt, 0) + COALESCE(pc.correct_cnt, 0)) * 100.0 /
-            (COALESCE(ca.cnt, 0) + COALESCE(pf.cnt, 0) + COALESCE(pc.cnt, 0)),
-            1
-          )
-        END AS accuracy
-      FROM sessions s
-      LEFT JOIN (
-        SELECT session_id, COUNT(*) AS cnt, SUM(correct) AS correct_cnt
-        FROM classic_attempts GROUP BY session_id
-      ) ca ON ca.session_id = s.id
-      LEFT JOIN (
-        SELECT session_id, COUNT(*) AS cnt, SUM(correct) AS correct_cnt
-        FROM pick_flag_attempts GROUP BY session_id
-      ) pf ON pf.session_id = s.id
-      LEFT JOIN (
-        SELECT session_id, COUNT(*) AS cnt, SUM(correct) AS correct_cnt
-        FROM pick_country_attempts GROUP BY session_id
-      ) pc ON pc.session_id = s.id
-      ORDER BY s.started DESC
-      LIMIT ? OFFSET ?
-    `);
-
-    const sessions = stmt.all(limit, offset);
-
-    const countStmt = db.prepare(`SELECT COUNT(*) AS total FROM sessions`);
-    const { total } = countStmt.get() as { total: number };
-
-    return c.json({ ok: true, sessions, total });
-  });
-
-  // Get single session with attempts
-  app.get("/sessions/:id", (c) => {
-    const id = c.req.param("id");
-
-    const sessionStmt = db.prepare(`SELECT * FROM sessions WHERE id = ?`);
-    const session = sessionStmt.get(id) as any;
-
-    if (!session) {
-      return c.json({ ok: false, error: "Session not found" }, 404);
-    }
-
-    const modeTableMap: Record<string, string> = {
-      classic: "classic_attempts",
-      "pick-the-flag": "pick_flag_attempts",
-      "pick-the-country": "pick_country_attempts",
-    };
-
-    const table = modeTableMap[session.mode];
-    let attempts: any[] = [];
-
-    if (table) {
-      const attemptsStmt = db.prepare(
-        `SELECT * FROM ${table} WHERE session_id = ? ORDER BY ts ASC`
+      // Check if session has attempts via the all_attempts view (raw SQL — view not in Drizzle schema)
+      const hasAttempts = db.get<{ x: number }>(
+        sql`SELECT 1 AS x FROM all_attempts WHERE session_id = ${id} AND collection_id = ${collectionId} LIMIT 1`,
       );
-      attempts = attemptsStmt.all(id) as any[];
 
-      // Convert SQLite integers back to booleans, parse JSON arrays
-      attempts = attempts.map((a) => {
-        const result = { ...a, correct: a.correct === 1 };
-        if ("forgotten" in a) {
+      if (!hasAttempts) {
+        db.delete(sessions)
+          .where(and(eq(sessions.id, id), eq(sessions.collection_id, collectionId)))
+          .run();
+        return c.json({ ok: true as const, deleted: true });
+      }
+
+      const result = db.update(sessions)
+        .set({ ended: parsed.data.ended })
+        .where(and(eq(sessions.id, id), eq(sessions.collection_id, collectionId)))
+        .run();
+
+      if (result.changes === 0) {
+        return c.json({ ok: false as const, error: "Session not found" }, 404);
+      }
+
+      return c.json({ ok: true as const });
+    })
+    .get("/sessions", (c) => {
+      const collectionId = c.get("collectionId");
+      const limit = Math.min(parseInt(c.req.query("limit") || "50", 10) || 50, 200);
+      const offset = Math.max(parseInt(c.req.query("offset") || "0", 10) || 0, 0);
+
+      // Complex LEFT JOIN with aggregate subquery — raw SQL via Drizzle sql template
+      const rows = db.all<{
+        id: string;
+        collection_id: string;
+        mode: string;
+        exit_condition: string;
+        quick: number;
+        started: string;
+        ended: string | null;
+        created_at: string;
+        attempt_count: number;
+        accuracy: number;
+      }>(sql`
+        SELECT
+          s.*,
+          COALESCE(a.cnt, 0) AS attempt_count,
+          CASE WHEN COALESCE(a.cnt, 0) = 0 THEN 0
+            ELSE ROUND(COALESCE(a.correct_cnt, 0) * 100.0 / a.cnt, 1)
+          END AS accuracy
+        FROM sessions s
+        LEFT JOIN (
+          SELECT session_id, COUNT(*) AS cnt, SUM(correct) AS correct_cnt
+          FROM all_attempts WHERE collection_id = ${collectionId} GROUP BY session_id
+        ) a ON a.session_id = s.id
+        WHERE s.collection_id = ${collectionId}
+        ORDER BY s.started DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      const totalRow = db.get<{ total: number }>(
+        sql`SELECT COUNT(*) AS total FROM sessions WHERE collection_id = ${collectionId}`,
+      );
+
+      return c.json({ ok: true as const, sessions: rows, total: totalRow?.total ?? 0 });
+    })
+    .get("/sessions/:id", (c) => {
+      const collectionId = c.get("collectionId");
+      const id = c.req.param("id");
+
+      const session = db
+        .select()
+        .from(sessions)
+        .where(and(eq(sessions.id, id), eq(sessions.collection_id, collectionId)))
+        .get();
+
+      if (!session) {
+        return c.json({ ok: false as const, error: "Session not found" }, 404);
+      }
+
+      const rows = db
+        .select()
+        .from(attempts)
+        .where(and(eq(attempts.session_id, id), eq(attempts.collection_id, collectionId)))
+        .orderBy(attempts.ts)
+        .all();
+
+      const mapped = rows.map((a) => {
+        const result: Record<string, unknown> = { ...a, correct: a.correct === 1 };
+        if (a.forgotten !== undefined) {
           result.forgotten = a.forgotten === 1;
         }
-        if ("options" in a && typeof a.options === "string") {
-          result.options = JSON.parse(a.options);
+        if (typeof a.options === "string") {
+          try {
+            result.options = JSON.parse(a.options);
+          } catch {
+            result.options = [];
+          }
         }
         return result;
       });
-    }
 
-    return c.json({ ok: true, session, attempts });
-  });
-
-  return app;
+      return c.json({ ok: true as const, session, attempts: mapped });
+    });
 }

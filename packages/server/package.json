@@ -3,6 +3,12 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
     "dev": "tsc && node --env-file=../../.env dist/index.js",
     "dev:watch": "tsx --env-file=../../.env watch src/index.ts",
@@ -11,13 +17,15 @@
   },
   "dependencies": {
     "@flag-quiz/shared": "workspace:*",
-    "hono": "^4.7.0",
     "@hono/node-server": "^1.14.0",
-    "better-sqlite3": "^11.9.0"
+    "better-sqlite3": "^11.10.0",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.7.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "typescript": "^5.8.0",
-    "tsx": "^4.19.0"
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.0"
   }
 }

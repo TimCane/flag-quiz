@@ -1,407 +1,268 @@
 import { Hono } from "hono";
-import type Database from "better-sqlite3";
+import { sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth.js";
+import { requireCollection, isFlagInCollection } from "../middleware/collection.js";
+import type { DrizzleDb } from "../drizzle.js";
 
-export function statsRoutes(db: Database.Database): Hono {
-  const app = new Hono();
+// All queries use the `all_attempts` view which unions classic_attempts,
+// pick_flag_attempts, and pick_item_attempts. Adding a new game mode only
+// requires adding a row to the view definition in db.ts.
 
-  app.use("*", requireAuth);
+export function statsRoutes(db: DrizzleDb) {
+  return new Hono<{ Variables: { collectionId: string } }>()
+    .use("*", requireAuth)
+    .use("*", requireCollection)
+    .get("/stats", (c) => {
+      const cid = c.get("collectionId");
 
-  app.get("/stats", (c) => {
-    const stats = db.transaction(() => {
-      // Total attempts across all 3 tables
-      const totalAttempts = db
-        .prepare(
-          `SELECT
-            (SELECT COUNT(*) FROM classic_attempts WHERE accidental = 0) +
-            (SELECT COUNT(*) FROM pick_flag_attempts WHERE accidental = 0) +
-            (SELECT COUNT(*) FROM pick_country_attempts WHERE accidental = 0) AS total`
-        )
-        .get() as { total: number };
+      const attemptStats = db.get<{
+        total_attempts: number;
+        flags_attempted: number;
+        accuracy: number;
+      }>(sql`
+        SELECT
+          COUNT(*) AS total_attempts,
+          COUNT(DISTINCT flag) AS flags_attempted,
+          CASE WHEN COUNT(*) = 0 THEN 0
+            ELSE ROUND(SUM(correct) * 100.0 / COUNT(*), 1)
+          END AS accuracy
+        FROM all_attempts WHERE collection_id = ${cid} AND accidental = 0
+      `)!;
 
-      // Total sessions
-      const totalSessions = db
-        .prepare(`SELECT COUNT(*) AS total FROM sessions`)
-        .get() as { total: number };
+      const totalSessions = db.get<{ total: number }>(
+        sql`SELECT COUNT(*) AS total FROM sessions WHERE collection_id = ${cid}`,
+      )!;
 
-      // Unique flags attempted across all tables
-      const flagsAttempted = db
-        .prepare(
-          `SELECT COUNT(DISTINCT flag) AS total FROM (
-            SELECT flag FROM classic_attempts WHERE accidental = 0
-            UNION
-            SELECT flag FROM pick_flag_attempts WHERE accidental = 0
-            UNION
-            SELECT flag FROM pick_country_attempts WHERE accidental = 0
-          )`
-        )
-        .get() as { total: number };
+      const progressBreakdown = db.get<{ flags_mastered: number; flags_learning: number; flags_new: number }>(sql`
+        SELECT
+          COALESCE(SUM(CASE WHEN state = 3 THEN 1 ELSE 0 END), 0) AS flags_mastered,
+          COALESCE(SUM(CASE WHEN state IN (1, 2) THEN 1 ELSE 0 END), 0) AS flags_learning,
+          COALESCE(SUM(CASE WHEN state = 0 THEN 1 ELSE 0 END), 0) AS flags_new
+        FROM flag_progress WHERE collection_id = ${cid}
+      `)!;
 
-      // Overall accuracy across all tables
-      const accuracy = db
-        .prepare(
-          `SELECT
-            CASE
-              WHEN (
-                (SELECT COUNT(*) FROM classic_attempts WHERE accidental = 0) +
-                (SELECT COUNT(*) FROM pick_flag_attempts WHERE accidental = 0) +
-                (SELECT COUNT(*) FROM pick_country_attempts WHERE accidental = 0)
-              ) = 0 THEN 0
-              ELSE ROUND(
-                (
-                  (SELECT SUM(correct) FROM classic_attempts WHERE accidental = 0) +
-                  (SELECT SUM(correct) FROM pick_flag_attempts WHERE accidental = 0) +
-                  (SELECT SUM(correct) FROM pick_country_attempts WHERE accidental = 0)
-                ) * 100.0 / (
-                  (SELECT COUNT(*) FROM classic_attempts WHERE accidental = 0) +
-                  (SELECT COUNT(*) FROM pick_flag_attempts WHERE accidental = 0) +
-                  (SELECT COUNT(*) FROM pick_country_attempts WHERE accidental = 0)
-                ),
-                1
-              )
-            END AS accuracy`
-        )
-        .get() as { accuracy: number };
-
-      // Flag progress breakdown by state
-      // state: 0 = new, 1 = learning, 2 = review, 3 = mastered
-      const progressBreakdown = db
-        .prepare(
-          `SELECT
-            COALESCE(SUM(CASE WHEN state = 3 THEN 1 ELSE 0 END), 0) AS flags_mastered,
-            COALESCE(SUM(CASE WHEN state IN (1, 2) THEN 1 ELSE 0 END), 0) AS flags_learning,
-            COALESCE(SUM(CASE WHEN state = 0 THEN 1 ELSE 0 END), 0) AS flags_new
-          FROM flag_progress`
-        )
-        .get() as {
-        flags_mastered: number;
-        flags_learning: number;
-        flags_new: number;
-      };
-
-      return {
-        total_attempts: totalAttempts.total,
+      return c.json({
+        ok: true as const,
+        total_attempts: attemptStats.total_attempts,
         total_sessions: totalSessions.total,
-        flags_attempted: flagsAttempted.total,
-        accuracy: accuracy.accuracy,
+        flags_attempted: attemptStats.flags_attempted,
+        accuracy: attemptStats.accuracy,
         flags_mastered: progressBreakdown.flags_mastered,
         flags_learning: progressBreakdown.flags_learning,
         flags_new: progressBreakdown.flags_new,
-      };
-    })();
+      });
+    })
+    .get("/stats/flags", (c) => {
+      const cid = c.get("collectionId");
+      const rows = db.all<{ flag: string; attempt_count: number; accuracy: number; last_seen: string }>(sql`
+        SELECT flag, COUNT(*) AS attempt_count,
+          ROUND(SUM(correct) * 100.0 / COUNT(*), 1) AS accuracy,
+          MAX(ts) AS last_seen
+        FROM all_attempts WHERE collection_id = ${cid} AND accidental = 0
+        GROUP BY flag ORDER BY flag ASC
+      `);
 
-    return c.json({ ok: true, ...stats });
-  });
+      return c.json({ ok: true as const, flags: rows });
+    })
+    .get("/stats/confusions/:flag", (c) => {
+      const cid = c.get("collectionId");
+      const flag = c.req.param("flag");
 
-  // Per-flag stats for the history list
-  app.get("/stats/flags", (c) => {
-    const rows = db.prepare(`
-      SELECT
-        flag,
-        SUM(cnt) AS attempt_count,
-        CASE WHEN SUM(cnt) = 0 THEN 0
-          ELSE ROUND(SUM(correct_cnt) * 100.0 / SUM(cnt), 1)
-        END AS accuracy,
-        MAX(last_seen) AS last_seen
-      FROM (
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt, MAX(ts) AS last_seen
-        FROM classic_attempts WHERE accidental = 0 GROUP BY flag
-        UNION ALL
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt, MAX(ts) AS last_seen
-        FROM pick_flag_attempts WHERE accidental = 0 GROUP BY flag
-        UNION ALL
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt, MAX(ts) AS last_seen
-        FROM pick_country_attempts WHERE accidental = 0 GROUP BY flag
-      )
-      GROUP BY flag
-      ORDER BY flag ASC
-    `).all() as { flag: string; attempt_count: number; accuracy: number; last_seen: string }[];
+      if (!isFlagInCollection(cid, flag)) {
+        return c.json({ ok: false as const, error: "Unknown flag in this collection" }, 400);
+      }
 
-    return c.json({ ok: true, flags: rows });
-  });
+      const rows = db.all<{ guess: string; count: number }>(sql`
+        SELECT guess, COUNT(*) AS count
+        FROM all_attempts
+        WHERE collection_id = ${cid} AND accidental = 0 AND flag = ${flag} AND correct = 0 AND guess IS NOT NULL AND guess != ''
+        GROUP BY guess ORDER BY count DESC
+      `);
 
-  // Confusion pairs for a specific flag
-  app.get("/stats/confusions/:flag", (c) => {
-    const flag = c.req.param("flag");
-
-    const rows = db.prepare(`
-      SELECT guess, COUNT(*) AS count FROM (
-        SELECT guess FROM classic_attempts WHERE accidental = 0 AND flag = ? AND correct = 0 AND guess IS NOT NULL AND guess != ''
-        UNION ALL
-        SELECT guess FROM pick_flag_attempts WHERE accidental = 0 AND flag = ? AND correct = 0
-        UNION ALL
-        SELECT guess FROM pick_country_attempts WHERE accidental = 0 AND flag = ? AND correct = 0
-      )
-      GROUP BY guess
-      ORDER BY count DESC
-    `).all(flag, flag, flag) as { guess: string; count: number }[];
-
-    return c.json({ ok: true, confusions: rows });
-  });
-
-  // Daily progress over time: accuracy and cumulative flags mastered per day
-  app.get("/stats/progress", (c) => {
-    const rows = db.prepare(`
-      SELECT
-        date(ts) AS day,
-        COUNT(*) AS attempts,
-        SUM(correct) AS correct_count,
-        ROUND(SUM(correct) * 100.0 / COUNT(*), 1) AS accuracy
-      FROM (
-        SELECT ts, correct FROM classic_attempts WHERE accidental = 0
-        UNION ALL
-        SELECT ts, correct FROM pick_flag_attempts WHERE accidental = 0
-        UNION ALL
-        SELECT ts, correct FROM pick_country_attempts WHERE accidental = 0
-      )
-      GROUP BY date(ts)
-      ORDER BY day ASC
-    `).all() as { day: string; attempts: number; correct_count: number; accuracy: number }[];
-
-    return c.json({ ok: true, progress: rows });
-  });
-
-  // Accuracy by continent
-  app.get("/stats/continents", (c) => {
-    // We need to join with flag data — but flags are in shared package, not DB.
-    // Return per-flag accuracy and let the client group by continent.
-    const rows = db.prepare(`
-      SELECT
-        flag,
-        SUM(cnt) AS attempt_count,
-        SUM(correct_cnt) AS correct_count
-      FROM (
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM classic_attempts WHERE accidental = 0 GROUP BY flag
-        UNION ALL
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM pick_flag_attempts WHERE accidental = 0 GROUP BY flag
-        UNION ALL
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM pick_country_attempts WHERE accidental = 0 GROUP BY flag
-      )
-      GROUP BY flag
-    `).all() as { flag: string; attempt_count: number; correct_count: number }[];
-
-    return c.json({ ok: true, flags: rows });
-  });
-
-  // Top confused pairs (bidirectional)
-  app.get("/stats/confused-pairs", (c) => {
-    const rows = db.prepare(`
-      SELECT flag, guess, COUNT(*) AS count FROM (
-        SELECT flag, guess FROM classic_attempts WHERE accidental = 0 AND correct = 0 AND guess IS NOT NULL AND guess != ''
-        UNION ALL
-        SELECT flag, guess FROM pick_flag_attempts WHERE accidental = 0 AND correct = 0
-        UNION ALL
-        SELECT flag, guess FROM pick_country_attempts WHERE accidental = 0 AND correct = 0
-      )
-      GROUP BY flag, guess
-      ORDER BY count DESC
-      LIMIT 50
-    `).all() as { flag: string; guess: string; count: number }[];
-
-    return c.json({ ok: true, pairs: rows });
-  });
-
-  // Confidence/rating distribution
-  app.get("/stats/confidence", (c) => {
-    const rows = db.prepare(`
-      SELECT confidence, COUNT(*) AS count FROM (
-        SELECT confidence FROM classic_attempts WHERE accidental = 0
-        UNION ALL
-        SELECT confidence FROM pick_flag_attempts WHERE accidental = 0
-        UNION ALL
-        SELECT confidence FROM pick_country_attempts WHERE accidental = 0
-      )
-      GROUP BY confidence
-      ORDER BY confidence ASC
-    `).all() as { confidence: number; count: number }[];
-
-    return c.json({ ok: true, distribution: rows });
-  });
-
-  // Session activity per day (for heatmap)
-  app.get("/stats/activity", (c) => {
-    const rows = db.prepare(`
-      SELECT
-        date(ts) AS day,
-        COUNT(*) AS count
-      FROM (
-        SELECT ts FROM classic_attempts WHERE accidental = 0
-        UNION ALL
-        SELECT ts FROM pick_flag_attempts WHERE accidental = 0
-        UNION ALL
-        SELECT ts FROM pick_country_attempts WHERE accidental = 0
-      )
-      GROUP BY date(ts)
-      ORDER BY day ASC
-    `).all() as { day: string; count: number }[];
-
-    return c.json({ ok: true, activity: rows });
-  });
-
-  // Per-flag attempt sequence (for sparklines) — returns correct/wrong in order
-  app.get("/stats/sparklines", (c) => {
-    const rows = db.prepare(`
-      SELECT flag, correct FROM (
-        SELECT flag, correct, ts FROM classic_attempts WHERE accidental = 0
-        UNION ALL
-        SELECT flag, correct, ts FROM pick_flag_attempts WHERE accidental = 0
-        UNION ALL
-        SELECT flag, correct, ts FROM pick_country_attempts WHERE accidental = 0
-      )
-      ORDER BY flag ASC, ts ASC
-    `).all() as { flag: string; correct: number }[];
-
-    // Group into per-flag arrays of 0/1
-    const sparklines: Record<string, number[]> = {};
-    for (const r of rows) {
-      if (!sparklines[r.flag]) sparklines[r.flag] = [];
-      sparklines[r.flag].push(r.correct);
-    }
-
-    return c.json({ ok: true, sparklines });
-  });
-
-  // Hardest flags — lowest accuracy with minimum 3 attempts
-  app.get("/stats/hardest", (c) => {
-    const rows = db.prepare(`
-      SELECT
-        flag,
-        SUM(cnt) AS attempt_count,
-        ROUND(SUM(correct_cnt) * 100.0 / SUM(cnt), 1) AS accuracy
-      FROM (
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM classic_attempts WHERE accidental = 0 GROUP BY flag
-        UNION ALL
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM pick_flag_attempts WHERE accidental = 0 GROUP BY flag
-        UNION ALL
-        SELECT flag, COUNT(*) AS cnt, SUM(correct) AS correct_cnt FROM pick_country_attempts WHERE accidental = 0 GROUP BY flag
-      )
-      GROUP BY flag
-      HAVING SUM(cnt) >= 3
-      ORDER BY accuracy ASC, attempt_count DESC
-      LIMIT 10
-    `).all() as { flag: string; attempt_count: number; accuracy: number }[];
-
-    return c.json({ ok: true, hardest: rows });
-  });
-
-  // Before/after comparison — first 7 days vs last 7 days
-  app.get("/stats/comparison", (c) => {
-    const allDays = db.prepare(`
-      SELECT DISTINCT date(ts) AS day FROM (
-        SELECT ts FROM classic_attempts WHERE accidental = 0
-        UNION ALL SELECT ts FROM pick_flag_attempts WHERE accidental = 0
-        UNION ALL SELECT ts FROM pick_country_attempts WHERE accidental = 0
-      ) ORDER BY day ASC
-    `).all() as { day: string }[];
-
-    if (allDays.length < 2) {
-      return c.json({ ok: true, before: null, after: null });
-    }
-
-    const firstDay = allDays[0].day;
-    const lastDay = allDays[allDays.length - 1].day;
-
-    function getStats(startDay: string, days: number) {
-      const end = new Date(startDay);
-      end.setDate(end.getDate() + days);
-      const endStr = end.toISOString().slice(0, 10);
-
-      return db.prepare(`
-        SELECT
-          COUNT(*) AS attempts,
+      return c.json({ ok: true as const, confusions: rows });
+    })
+    .get("/stats/progress", (c) => {
+      const cid = c.get("collectionId");
+      const rows = db.all<{ day: string; attempts: number; correct_count: number; accuracy: number }>(sql`
+        SELECT date(ts) AS day, COUNT(*) AS attempts,
+          SUM(correct) AS correct_count,
           ROUND(SUM(correct) * 100.0 / COUNT(*), 1) AS accuracy
-        FROM (
-          SELECT correct, ts FROM classic_attempts WHERE accidental = 0 AND date(ts) >= ? AND date(ts) < ?
-          UNION ALL
-          SELECT correct, ts FROM pick_flag_attempts WHERE accidental = 0 AND date(ts) >= ? AND date(ts) < ?
-          UNION ALL
-          SELECT correct, ts FROM pick_country_attempts WHERE accidental = 0 AND date(ts) >= ? AND date(ts) < ?
-        )
-      `).get(startDay, endStr, startDay, endStr, startDay, endStr) as { attempts: number; accuracy: number };
-    }
+        FROM all_attempts WHERE collection_id = ${cid} AND accidental = 0
+        GROUP BY date(ts) ORDER BY day ASC
+      `);
 
-    // Last 7 days for "after"
-    const afterStart = new Date(lastDay);
-    afterStart.setDate(afterStart.getDate() - 6);
-    const afterStartStr = afterStart.toISOString().slice(0, 10);
+      return c.json({ ok: true as const, progress: rows });
+    })
+    .get("/stats/groups", (c) => {
+      const cid = c.get("collectionId");
+      const rows = db.all<{ flag: string; attempt_count: number; correct_count: number }>(sql`
+        SELECT flag, COUNT(*) AS attempt_count, SUM(correct) AS correct_count
+        FROM all_attempts WHERE collection_id = ${cid} AND accidental = 0
+        GROUP BY flag
+      `);
 
-    const before = getStats(firstDay, 7);
-    const after = getStats(afterStartStr, 7);
+      return c.json({ ok: true as const, flags: rows });
+    })
+    .get("/stats/confused-pairs", (c) => {
+      const cid = c.get("collectionId");
+      const rows = db.all<{ flag: string; guess: string; count: number }>(sql`
+        SELECT flag, guess, COUNT(*) AS count
+        FROM all_attempts
+        WHERE collection_id = ${cid} AND accidental = 0 AND correct = 0 AND guess IS NOT NULL AND guess != ''
+        GROUP BY flag, guess ORDER BY count DESC LIMIT 50
+      `);
 
-    return c.json({
-      ok: true,
-      before: { ...before, period: `${firstDay} to +7d` },
-      after: { ...after, period: `${afterStartStr} to ${lastDay}` },
+      return c.json({ ok: true as const, pairs: rows });
+    })
+    .get("/stats/confidence", (c) => {
+      const cid = c.get("collectionId");
+      const rows = db.all<{ confidence: number; count: number }>(sql`
+        SELECT confidence, COUNT(*) AS count
+        FROM all_attempts WHERE collection_id = ${cid} AND accidental = 0
+        GROUP BY confidence ORDER BY confidence ASC
+      `);
+
+      return c.json({ ok: true as const, distribution: rows });
+    })
+    .get("/stats/activity", (c) => {
+      const cid = c.get("collectionId");
+      const rows = db.all<{ day: string; count: number }>(sql`
+        SELECT date(ts) AS day, COUNT(*) AS count
+        FROM all_attempts WHERE collection_id = ${cid} AND accidental = 0
+        GROUP BY date(ts) ORDER BY day ASC
+      `);
+
+      return c.json({ ok: true as const, activity: rows });
+    })
+    .get("/stats/sparklines", (c) => {
+      const cid = c.get("collectionId");
+      const rows = db.all<{ flag: string; correct: number }>(sql`
+        SELECT flag, correct FROM (
+          SELECT flag, correct,
+            ROW_NUMBER() OVER (PARTITION BY flag ORDER BY ts DESC) AS rn
+          FROM all_attempts WHERE collection_id = ${cid} AND accidental = 0
+        ) WHERE rn <= 30
+        ORDER BY flag ASC, rn DESC
+      `);
+
+      const sparklines: Record<string, number[]> = {};
+      for (const r of rows) {
+        if (!sparklines[r.flag]) sparklines[r.flag] = [];
+        sparklines[r.flag].push(r.correct);
+      }
+
+      return c.json({ ok: true as const, sparklines });
+    })
+    .get("/stats/hardest", (c) => {
+      const cid = c.get("collectionId");
+      const rows = db.all<{ flag: string; attempt_count: number; accuracy: number }>(sql`
+        SELECT flag, COUNT(*) AS attempt_count,
+          ROUND(SUM(correct) * 100.0 / COUNT(*), 1) AS accuracy
+        FROM all_attempts WHERE collection_id = ${cid} AND accidental = 0
+        GROUP BY flag HAVING COUNT(*) >= 3
+        ORDER BY accuracy ASC, attempt_count DESC LIMIT 10
+      `);
+
+      return c.json({ ok: true as const, hardest: rows });
+    })
+    .get("/stats/comparison", (c) => {
+      const cid = c.get("collectionId");
+      const allDays = db.all<{ day: string }>(sql`
+        SELECT DISTINCT date(ts) AS day FROM all_attempts
+        WHERE collection_id = ${cid} AND accidental = 0
+        ORDER BY day ASC
+      `);
+
+      if (allDays.length < 2) {
+        return c.json({ ok: true as const, before: null, after: null });
+      }
+
+      const firstDay = allDays[0].day;
+      const lastDay = allDays[allDays.length - 1].day;
+
+      function getStats(startDay: string, days: number) {
+        const end = new Date(startDay);
+        end.setDate(end.getDate() + days);
+        const endStr = end.toISOString().slice(0, 10);
+
+        return db.get<{ attempts: number; accuracy: number }>(sql`
+          SELECT COUNT(*) AS attempts,
+            CASE WHEN COUNT(*) = 0 THEN 0
+              ELSE ROUND(SUM(correct) * 100.0 / COUNT(*), 1)
+            END AS accuracy
+          FROM all_attempts
+          WHERE collection_id = ${cid} AND accidental = 0 AND date(ts) >= ${startDay} AND date(ts) < ${endStr}
+        `)!;
+      }
+
+      const afterStart = new Date(lastDay);
+      afterStart.setDate(afterStart.getDate() - 6);
+      const afterStartStr = afterStart.toISOString().slice(0, 10);
+
+      const before = getStats(firstDay, 7);
+      const after = getStats(afterStartStr, 7);
+
+      return c.json({
+        ok: true as const,
+        before: { ...before, period: `${firstDay} to +7d` },
+        after: { ...after, period: `${afterStartStr} to ${lastDay}` },
+      });
+    })
+    .get("/stats/percentiles", (c) => {
+      const cid = c.get("collectionId");
+      const minSamples = 10;
+
+      const allRows = db.all<{ rt: number; flag: string; mode: string }>(sql`
+        SELECT reaction_time_ms AS rt, flag, mode
+        FROM all_attempts
+        WHERE collection_id = ${cid} AND accidental = 0 AND reaction_time_ms > 0
+        ORDER BY ts DESC LIMIT 5000
+      `);
+
+      function percentiles(times: number[]): { p25: number; p75: number } | null {
+        if (times.length < minSamples) return null;
+        const sorted = [...times].sort((a, b) => a - b);
+        const p25 = sorted[Math.floor(sorted.length * 0.25)];
+        const p75 = sorted[Math.floor(sorted.length * 0.75)];
+        return { p25, p75 };
+      }
+
+      const globalP = percentiles(allRows.map((r) => r.rt));
+
+      const byMode: Record<string, { p25: number; p75: number } | null> = {};
+      const modeGroups = new Map<string, number[]>();
+      for (const r of allRows) {
+        const arr = modeGroups.get(r.mode) || [];
+        arr.push(r.rt);
+        modeGroups.set(r.mode, arr);
+      }
+      for (const [mode, times] of modeGroups) {
+        byMode[mode] = percentiles(times);
+      }
+
+      const byFlag: Record<string, { p25: number; p75: number } | null> = {};
+      const flagGroups = new Map<string, number[]>();
+      for (const r of allRows) {
+        const arr = flagGroups.get(r.flag) || [];
+        arr.push(r.rt);
+        flagGroups.set(r.flag, arr);
+      }
+      for (const [flag, times] of flagGroups) {
+        const p = percentiles(times);
+        if (p) byFlag[flag] = p;
+      }
+
+      return c.json({ ok: true as const, global: globalP, by_mode: byMode, by_flag: byFlag });
+    })
+    .get("/stats/reaction-times", (c) => {
+      const cid = c.get("collectionId");
+      const rows = db.all<{ flag: string; avg_ms: number }>(sql`
+        SELECT flag, ROUND(AVG(reaction_time_ms)) AS avg_ms
+        FROM all_attempts
+        WHERE collection_id = ${cid} AND accidental = 0 AND reaction_time_ms > 0
+        GROUP BY flag
+      `);
+
+      return c.json({ ok: true as const, reaction_times: rows });
     });
-  });
-
-  // Reaction time percentiles for Quick mode auto-rating
-  app.get("/stats/percentiles", (c) => {
-    const minSamples = 10;
-
-    // All reaction times with mode and flag
-    const allRows = db.prepare(`
-      SELECT reaction_time_ms AS rt, flag, 'classic' AS mode FROM classic_attempts WHERE accidental = 0 AND reaction_time_ms > 0
-      UNION ALL
-      SELECT reaction_time_ms AS rt, flag, 'pick-the-flag' AS mode FROM pick_flag_attempts WHERE accidental = 0 AND reaction_time_ms > 0
-      UNION ALL
-      SELECT reaction_time_ms AS rt, flag, 'pick-the-country' AS mode FROM pick_country_attempts WHERE accidental = 0 AND reaction_time_ms > 0
-    `).all() as { rt: number; flag: string; mode: string }[];
-
-    function percentiles(times: number[]): { p25: number; p75: number } | null {
-      if (times.length < minSamples) return null;
-      const sorted = [...times].sort((a, b) => a - b);
-      const p25 = sorted[Math.floor(sorted.length * 0.25)];
-      const p75 = sorted[Math.floor(sorted.length * 0.75)];
-      return { p25, p75 };
-    }
-
-    // Global
-    const globalP = percentiles(allRows.map((r) => r.rt));
-
-    // By mode
-    const byMode: Record<string, { p25: number; p75: number } | null> = {};
-    const modeGroups = new Map<string, number[]>();
-    for (const r of allRows) {
-      const arr = modeGroups.get(r.mode) || [];
-      arr.push(r.rt);
-      modeGroups.set(r.mode, arr);
-    }
-    for (const [mode, times] of modeGroups) {
-      byMode[mode] = percentiles(times);
-    }
-
-    // By flag
-    const byFlag: Record<string, { p25: number; p75: number } | null> = {};
-    const flagGroups = new Map<string, number[]>();
-    for (const r of allRows) {
-      const arr = flagGroups.get(r.flag) || [];
-      arr.push(r.rt);
-      flagGroups.set(r.flag, arr);
-    }
-    for (const [flag, times] of flagGroups) {
-      const p = percentiles(times);
-      if (p) byFlag[flag] = p;
-    }
-
-    return c.json({ ok: true, global: globalP, by_mode: byMode, by_flag: byFlag });
-  });
-
-  // Average reaction time per flag
-  app.get("/stats/reaction-times", (c) => {
-    const rows = db.prepare(`
-      SELECT flag, ROUND(AVG(rt)) AS avg_ms FROM (
-        SELECT flag, reaction_time_ms AS rt FROM classic_attempts WHERE accidental = 0 AND reaction_time_ms > 0
-        UNION ALL
-        SELECT flag, reaction_time_ms AS rt FROM pick_flag_attempts WHERE accidental = 0 AND reaction_time_ms > 0
-        UNION ALL
-        SELECT flag, reaction_time_ms AS rt FROM pick_country_attempts WHERE accidental = 0 AND reaction_time_ms > 0
-      )
-      GROUP BY flag
-    `).all() as { flag: string; avg_ms: number }[];
-
-    return c.json({ ok: true, reaction_times: rows });
-  });
-
-  return app;
 }
