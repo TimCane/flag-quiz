@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import { useActiveCollection } from "./collection-context";
 import { getToken, clearToken } from "./auth";
 
 const BASE = "/api";
@@ -45,24 +47,23 @@ async function request<T>(
   return res.json();
 }
 
+function makeClient(prefix: string) {
+  const p = (path: string) => `${prefix}${path}`;
+  return {
+    get: <T>(path: string) => request<T>(p(path)),
+    post: <T>(path: string, body: unknown) =>
+      request<T>(p(path), { method: "POST", body: JSON.stringify(body) }),
+    put: <T>(path: string, body: unknown) =>
+      request<T>(p(path), { method: "PUT", body: JSON.stringify(body) }),
+    delete: <T>(path: string) => request<T>(p(path), { method: "DELETE" }),
+  };
+}
+
+// Global API client — used for routes that are not collection-scoped:
+//   /auth, /decks, /settings, /health
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  ...makeClient(""),
 
-  post: <T>(path: string, body: unknown) =>
-    request<T>(path, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-
-  put: <T>(path: string, body: unknown) =>
-    request<T>(path, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
-
-  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
-
-  // Auth (no token needed)
   login: async (password: string) => {
     const res = await fetch(`${BASE}/auth/check`, {
       method: "POST",
@@ -72,3 +73,14 @@ export const api = {
     return res.json() as Promise<{ ok: boolean; token?: string; error?: string }>;
   },
 };
+
+// Hook returning an API client whose paths are prefixed with the active collection.
+export function useCollectionApi() {
+  const { collection } = useActiveCollection();
+  return useMemo(() => makeClient(`/${collection.id}`), [collection.id]);
+}
+
+// Programmatic factory (for one-off cases outside React hooks). Prefer useCollectionApi().
+export function collectionApi(collectionId: string) {
+  return makeClient(`/${collectionId}`);
+}

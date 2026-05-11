@@ -1,6 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { QueryProvider } from "./lib/query";
+import { ToastProvider } from "./components/ui/toast";
 
 // Fonts (self-hosted via fontsource)
 import "@fontsource/dm-serif-display/400.css";
@@ -16,6 +18,10 @@ import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <QueryProvider>
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    </QueryProvider>
   </StrictMode>
 );

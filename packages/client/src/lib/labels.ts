@@ -1,3 +1,5 @@
+import type { Collection } from "@flag-quiz/shared";
+
 export const RATING_LABELS: Record<number, string> = {
   1: "Again",
   2: "Hard",
@@ -12,17 +14,22 @@ export const RATING_COLORS: Record<number, string> = {
   4: "bg-gradient-to-b from-sky-500 to-sky-700 shadow-sky-900/30 hover:from-sky-400 hover:to-sky-600",
 };
 
-export const MODE_LABELS: Record<string, string> = {
-  classic: "Classic",
-  "pick-the-flag": "Pick the Flag",
-  "pick-the-country": "Pick the Country",
-};
+export function modeLabels(itemLabel: string): Record<string, string> {
+  const cap = itemLabel.charAt(0).toUpperCase() + itemLabel.slice(1);
+  return {
+    classic: "Classic",
+    "pick-the-flag": "Pick the Flag",
+    "pick-the-item": `Pick the ${cap}`,
+  };
+}
 
-export const MODE_DESCRIPTIONS: Record<string, string> = {
-  classic: "See a flag, type the country name",
-  "pick-the-flag": "See a country name, pick the correct flag",
-  "pick-the-country": "See a flag, pick the correct country name",
-};
+export function modeDescriptions(itemLabel: string): Record<string, string> {
+  return {
+    classic: `See a flag, type the ${itemLabel} name`,
+    "pick-the-flag": `See a ${itemLabel} name, pick the correct flag`,
+    "pick-the-item": `See a flag, pick the correct ${itemLabel} name`,
+  };
+}
 
 export const EXIT_LABELS: Record<string, string> = {
   normal: "Normal",
@@ -52,35 +59,45 @@ export const STATE_COLORS: Record<number, string> = {
   3: "text-orange-400",
 };
 
-export const CONTINENT_LABELS: Record<string, string> = {
-  africa: "Africa",
-  asia: "Asia",
-  europe: "Europe",
-  "north-america": "N. America",
-  "south-america": "S. America",
-  oceania: "Oceania",
-};
+// Olympic-ring-inspired palette indexed by position; collections can have any number of
+// group buckets, so we cycle through these.
+const GROUP_PALETTE = [
+  "#0081C8", // blue
+  "#F4C542", // yellow
+  "#333333", // black
+  "#EE334E", // red
+  "#00A651", // green
+  "#FC4C02", // orange
+  "#7C3AED", // purple
+  "#0EA5E9", // sky
+  "#10B981", // emerald
+  "#F59E0B", // amber
+  "#EF4444", // rose
+  "#6366F1", // indigo
+];
 
-export const CONTINENT_LABELS_FULL: Record<string, string> = {
-  africa: "Africa",
-  asia: "Asia",
-  europe: "Europe",
-  "north-america": "North America",
-  "south-america": "South America",
-  oceania: "Oceania",
-};
+export function groupName(collection: Collection, groupId: string): string {
+  const g = collection.groups.find((x) => x.id === groupId);
+  return g?.name ?? groupId;
+}
+
+export function groupColor(collection: Collection, groupId: string): string {
+  const idx = collection.groups.findIndex((g) => g.id === groupId);
+  if (idx < 0) return "#10b981";
+  return GROUP_PALETTE[idx % GROUP_PALETTE.length];
+}
+
+export function groupColors(collection: Collection): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (let i = 0; i < collection.groups.length; i++) {
+    out[collection.groups[i].id] = GROUP_PALETTE[i % GROUP_PALETTE.length];
+    // Also map display name to colour, since some charts key by display name.
+    out[collection.groups[i].name] = GROUP_PALETTE[i % GROUP_PALETTE.length];
+  }
+  return out;
+}
 
 export const PIE_COLORS = ["#5a6178", "#eab308", "#c9a84c", "#f97316"];
-
-// Olympic ring colours mapped to continents
-export const CONTINENT_COLORS: Record<string, string> = {
-  "Africa": "#333333",       // Black ring
-  "Asia": "#F4C542",         // Yellow ring
-  "Europe": "#0081C8",       // Blue ring
-  "N. America": "#EE334E",   // Red ring
-  "S. America": "#FC4C02",   // Red-orange (variant for second Americas)
-  "Oceania": "#00A651",      // Green ring
-};
 
 export const CONFIDENCE_COLORS: Record<number, string> = {
   1: "#ef4444",
