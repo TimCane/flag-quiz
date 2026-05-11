@@ -1,5 +1,3 @@
-import { useState } from "react";
-import { useNavigate } from "react-router";
 import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Toggle } from "../../components/ui/toggle";
@@ -14,40 +12,24 @@ import { usePresentationSection } from "./usePresentationSection";
 export function PresentationSection() {
   const {
     config,
-    tags,
     loading,
     expanded,
     setExpanded,
     toggleTag,
-    reorderTags,
     toggleOption,
     setFragmentDelay,
+    selectedTags,
+    unselectedTags,
+    dragIndex,
+    dragOverIndex,
+    setDragIndex,
+    handleDragOver,
+    handleDrop,
+    handleDragEnd,
+    handleLaunch,
   } = usePresentationSection();
 
-  const navigate = useNavigate();
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-
   if (loading) return null;
-
-  const selectedTags = config.tag_order
-    .map((id) => tags.find((t) => t.id === id))
-    .filter((t): t is NonNullable<typeof t> => !!t);
-
-  const unselectedTags = tags.filter((t) => !config.tag_order.includes(t.id));
-
-  function handleDragOver(e: React.DragEvent, index: number) {
-    e.preventDefault();
-    setDragOverIndex(index);
-  }
-
-  function handleDrop(index: number) {
-    if (dragIndex !== null && dragIndex !== index) {
-      reorderTags(dragIndex, index);
-    }
-    setDragIndex(null);
-    setDragOverIndex(null);
-  }
 
   return (
     <Card>
@@ -66,7 +48,7 @@ export function PresentationSection() {
       </CardHeader>
       {expanded && (
         <CardContent className="space-y-5">
-          {tags.length === 0 ? (
+          {selectedTags.length === 0 && unselectedTags.length === 0 ? (
             <p className="text-sm text-surface-500 italic">
               Create tags first to configure the presentation.
             </p>
@@ -86,10 +68,7 @@ export function PresentationSection() {
                     onDragStart={() => setDragIndex(index)}
                     onDragOver={(e) => handleDragOver(e, index)}
                     onDrop={() => handleDrop(index)}
-                    onDragEnd={() => {
-                      setDragIndex(null);
-                      setDragOverIndex(null);
-                    }}
+                    onDragEnd={handleDragEnd}
                     className={`flex items-center gap-2 rounded-xl px-3 py-2.5 transition-all duration-200 ${
                       dragOverIndex === index && dragIndex !== index
                         ? "bg-emerald-500/10 border border-emerald-500/30"
@@ -187,7 +166,7 @@ export function PresentationSection() {
 
               {/* Launch button */}
               <Button
-                onClick={() => navigate("/presentation")}
+                onClick={handleLaunch}
                 disabled={config.tag_order.length === 0}
                 variant="success"
                 className="w-full gap-2"

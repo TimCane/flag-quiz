@@ -1,9 +1,9 @@
-import { flagByCode } from "@flag-quiz/shared";
+import { useState } from "react";
 import { FlagDisplay } from "../FlagDisplay";
 import { Button } from "../../ui/button";
 import { MnemonicTextarea } from "../../ui/mnemonic-textarea";
 import { TagPills } from "../../ui/tag-pills";
-import { useQuickWrongScreen } from "./useQuickWrongScreen";
+import { useActiveCollection } from "../../../lib/collection-context";
 
 interface QuickWrongScreenProps {
   flagCode: string;
@@ -22,12 +22,11 @@ export function QuickWrongScreen({
   onNext,
   tagNames = [],
 }: QuickWrongScreenProps) {
-  const { mnemonic, setMnemonic, handleNext } = useQuickWrongScreen({
-    initialMnemonic,
-    onNext,
-  });
-  const flag = flagByCode.get(flagCode);
-  const guessFlag = guess ? flagByCode.get(guess) : null;
+  const { flagByCode } = useActiveCollection();
+  const [mnemonic, setMnemonic] = useState(initialMnemonic);
+
+  const flag = flagByCode(flagCode);
+  const guessFlag = guess ? flagByCode(guess) : null;
 
   return (
     <div className="flex flex-col items-center gap-6 animate-fade-in">
@@ -63,7 +62,7 @@ export function QuickWrongScreen({
       )}
 
       <Button
-        onClick={handleNext}
+        onClick={() => onNext(mnemonic)}
         size="xl"
         className="w-full max-w-sm"
       >

@@ -1,29 +1,25 @@
-import { useState, useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useParams } from "react-router";
-import { api } from "../../lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { useCollectionApi } from "../../lib/api";
+import { useActiveCollection } from "../../lib/collection-context";
 import type { SessionData, AttemptData } from "../../lib/types";
 
 export type { SessionData, AttemptData };
 
 export function useSessionDetail() {
   const { id } = useParams<{ id: string }>();
-  const [session, setSession] = useState<SessionData | null>(null);
-  const [attempts, setAttempts] = useState<AttemptData[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { collection } = useActiveCollection();
+  const api = useCollectionApi();
 
-  useEffect(() => {
-    if (!id) return;
-    api
-      .get<{ ok: boolean; session: SessionData; attempts: AttemptData[] }>(
-        `/sessions/${id}`,
-      )
-      .then((res) => {
-        setSession(res.session);
-        setAttempts(res.attempts);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [id]);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["session", collection.id, id],
+    queryFn: () => api.get<{ ok: boolean; session: SessionData; attempts: AttemptData[] }>(`/sessions/${id}`),
+    enabled: !!id,
+  });
+
+  const session = data?.session ?? null;
+  const attempts = data?.attempts ?? [];
 
   const started = session ? new Date(session.started) : null;
   const ended = session?.ended ? new Date(session.ended) : null;
@@ -44,5 +40,5 @@ export function useSessionDetail() {
     [attempts],
   );
 
-  return { session, attempts, loading, started, duration, accuracy, avgReaction };
+  return { session, attempts, loading: isLoading, error: error?.message ?? null, started, duration, accuracy, avgReaction };
 }

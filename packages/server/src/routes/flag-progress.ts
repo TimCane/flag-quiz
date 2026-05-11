@@ -1,48 +1,65 @@
 import { Hono } from "hono";
-import type Database from "better-sqlite3";
+import { eq, asc } from "drizzle-orm";
 import { UpsertFlagProgressSchema } from "@flag-quiz/shared";
 import { requireAuth } from "../middleware/auth.js";
+import { requireCollection, isFlagInCollection } from "../middleware/collection.js";
+import { flagProgress } from "../schema.js";
+import type { DrizzleDb } from "../drizzle.js";
 
-export function flagProgressRoutes(db: Database.Database): Hono {
-  const app = new Hono();
+export function flagProgressRoutes(db: DrizzleDb) {
+  return new Hono<{ Variables: { collectionId: string } }>()
+    .use("*", requireAuth)
+    .use("*", requireCollection)
+    .get("/flag-progress", (c) => {
+      const collectionId = c.get("collectionId");
+      const records = db
+        .select()
+        .from(flagProgress)
+        .where(eq(flagProgress.collection_id, collectionId))
+        .orderBy(asc(flagProgress.flag))
+        .all();
+      return c.json({ ok: true as const, records });
+    })
+    .post("/flag-progress", async (c) => {
+      const collectionId = c.get("collectionId");
+      const body = await c.req.json();
+      const parsed = UpsertFlagProgressSchema.safeParse(body);
 
-  app.use("*", requireAuth);
+      if (!parsed.success) {
+        return c.json({ ok: false as const, error: parsed.error.flatten() }, 400);
+      }
 
-  // Get all flag progress records
-  app.get("/flag-progress", (c) => {
-    const stmt = db.prepare(`SELECT * FROM flag_progress ORDER BY flag ASC`);
-    const records = stmt.all();
-    return c.json({ ok: true, records });
-  });
+      const d = parsed.data;
+      if (!isFlagInCollection(collectionId, d.flag)) {
+        return c.json({ ok: false as const, error: "Unknown flag in this collection" }, 400);
+      }
 
-  // Upsert a flag progress record
-  app.post("/flag-progress", async (c) => {
-    const body = await c.req.json();
-    const parsed = UpsertFlagProgressSchema.safeParse(body);
+      db.insert(flagProgress)
+        .values({
+          collection_id: collectionId,
+          flag: d.flag,
+          mnemonic: d.mnemonic,
+          stability: d.stability,
+          difficulty: d.difficulty,
+          state: d.state,
+          last_review: d.last_review,
+          due: d.due,
+          updated_at: d.updated_at,
+        })
+        .onConflictDoUpdate({
+          target: [flagProgress.collection_id, flagProgress.flag],
+          set: {
+            mnemonic: d.mnemonic,
+            stability: d.stability,
+            difficulty: d.difficulty,
+            state: d.state,
+            last_review: d.last_review,
+            due: d.due,
+            updated_at: d.updated_at,
+          },
+        })
+        .run();
 
-    if (!parsed.success) {
-      return c.json({ ok: false, error: parsed.error.flatten() }, 400);
-    }
-
-    const d = parsed.data;
-    const stmt = db.prepare(`
-      INSERT OR REPLACE INTO flag_progress (flag, mnemonic, stability, difficulty, state, last_review, due, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      d.flag,
-      d.mnemonic,
-      d.stability,
-      d.difficulty,
-      d.state,
-      d.last_review,
-      d.due,
-      d.updated_at
-    );
-
-    return c.json({ ok: true, flag: d.flag }, 201);
-  });
-
-  return app;
+      return c.json({ ok: true as const, flag: d.flag }, 201);
+    });
 }

@@ -1,7 +1,7 @@
 export const Mode = {
   CLASSIC: "classic",
   PICK_THE_FLAG: "pick-the-flag",
-  PICK_THE_COUNTRY: "pick-the-country",
+  PICK_THE_ITEM: "pick-the-item",
 } as const;
 
 export type Mode = (typeof Mode)[keyof typeof Mode];
@@ -32,14 +32,3 @@ export const Rating = {
 } as const;
 
 export type Rating = (typeof Rating)[keyof typeof Rating];
-
-export const Continent = {
-  AFRICA: "africa",
-  ASIA: "asia",
-  EUROPE: "europe",
-  NORTH_AMERICA: "north-america",
-  SOUTH_AMERICA: "south-america",
-  OCEANIA: "oceania",
-} as const;
-
-export type Continent = (typeof Continent)[keyof typeof Continent];

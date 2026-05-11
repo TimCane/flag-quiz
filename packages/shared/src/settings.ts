@@ -1,5 +1,18 @@
 import type { Setting } from "./schemas/setting.js";
 
+export const SETTING_KEYS = {
+  SPEED_TIMEOUT_CLASSIC_MS: "speed_timeout_classic_ms",
+  SPEED_TIMEOUT_PICK_FLAG_MS: "speed_timeout_pick_flag_ms",
+  SPEED_TIMEOUT_PICK_ITEM_MS: "speed_timeout_pick_item_ms",
+  PICK_OPTIONS_MIN: "pick_options_min",
+  PICK_OPTIONS_MAX: "pick_options_max",
+  FSRS_REQUEST_RETENTION: "fsrs_request_retention",
+  FSRS_MAXIMUM_INTERVAL: "fsrs_maximum_interval",
+  PRESENTATION_CONFIG: "presentation_config",
+} as const;
+
+export type SettingKey = (typeof SETTING_KEYS)[keyof typeof SETTING_KEYS];
+
 export const DEFAULT_SETTINGS: Setting[] = [
   {
     key: "speed_timeout_classic_ms",
@@ -16,10 +29,10 @@ export const DEFAULT_SETTINGS: Setting[] = [
     category: "Speed Mode",
   },
   {
-    key: "speed_timeout_pick_country_ms",
+    key: "speed_timeout_pick_item_ms",
     value: "5000",
     type: "number",
-    label: "Speed timeout — Pick the Country (ms)",
+    label: "Speed timeout — Pick the Name (ms)",
     category: "Speed Mode",
   },
   {

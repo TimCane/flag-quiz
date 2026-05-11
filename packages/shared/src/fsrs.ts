@@ -29,19 +29,15 @@ export function progressToCard(progress: FlagProgress | null): Card {
     return createEmptyCard();
   }
 
-  return {
-    due: new Date(progress.due ?? new Date().toISOString()),
-    stability: progress.stability,
-    difficulty: progress.difficulty ?? 0,
-    elapsed_days: 0,
-    scheduled_days: 0,
-    reps: 0,
-    lapses: 0,
-    state: progress.state,
-    last_review: progress.last_review
-      ? new Date(progress.last_review)
-      : undefined,
-  } as Card;
+  const card = createEmptyCard();
+  card.due = new Date(progress.due ?? new Date().toISOString());
+  card.stability = progress.stability;
+  card.difficulty = progress.difficulty ?? 0;
+  card.state = progress.state;
+  if (progress.last_review) {
+    card.last_review = new Date(progress.last_review);
+  }
+  return card;
 }
 
 export function cardToProgress(

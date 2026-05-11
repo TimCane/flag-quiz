@@ -3,7 +3,7 @@ import { Mode, ExitCondition } from "../enums.js";
 
 export const SessionSchema = z.object({
   id: z.string().uuid(),
-  mode: z.enum([Mode.CLASSIC, Mode.PICK_THE_FLAG, Mode.PICK_THE_COUNTRY]),
+  mode: z.enum([Mode.CLASSIC, Mode.PICK_THE_FLAG, Mode.PICK_THE_ITEM]),
   exit_condition: z.enum([
     ExitCondition.NORMAL,
     ExitCondition.STREAK,

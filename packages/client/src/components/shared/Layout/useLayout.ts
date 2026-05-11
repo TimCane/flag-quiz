@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { clearToken } from "../../../lib/auth";
+import { useActiveCollection } from "../../../lib/collection-context";
 
 export function useLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { collection } = useActiveCollection();
   const [online, setOnline] = useState(navigator.onLine);
 
   useEffect(() => {
@@ -23,7 +25,8 @@ export function useLayout() {
     navigate("/login");
   }
 
-  const isPlaying = location.pathname === "/play";
+  const prefix = `/${collection.id}`;
+  const isPlaying = location.pathname === `${prefix}/play`;
 
-  return { online, isPlaying, location, handleLogout };
+  return { online, isPlaying, location, handleLogout, collection, prefix };
 }

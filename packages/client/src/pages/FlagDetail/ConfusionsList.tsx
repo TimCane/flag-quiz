@@ -1,6 +1,6 @@
-import { flagByCode } from "@flag-quiz/shared";
 import { FlagDisplay } from "../../components/game/FlagDisplay";
 import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
+import { useActiveCollection } from "../../lib/collection-context";
 import { type ConfusionRow } from "./useFlagDetail";
 
 interface ConfusionsListProps {
@@ -8,6 +8,7 @@ interface ConfusionsListProps {
 }
 
 export function ConfusionsList({ confusions }: ConfusionsListProps) {
+  const { flagByCode } = useActiveCollection();
   if (confusions.length === 0) return null;
 
   return (
@@ -18,7 +19,7 @@ export function ConfusionsList({ confusions }: ConfusionsListProps) {
       <CardContent>
         <div className="space-y-2.5">
           {confusions.map((c) => {
-            const confusedFlag = flagByCode.get(c.guess);
+            const confusedFlag = flagByCode(c.guess);
             return (
               <div
                 key={c.guess}

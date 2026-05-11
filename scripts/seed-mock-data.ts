@@ -35,7 +35,7 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (session_id) REFERENCES sessions(id)
   );
-  CREATE TABLE IF NOT EXISTS pick_country_attempts (
+  CREATE TABLE IF NOT EXISTS pick_item_attempts (
     id TEXT PRIMARY KEY, session_id TEXT NOT NULL, flag TEXT NOT NULL,
     guess TEXT NOT NULL, options TEXT NOT NULL, correct INTEGER NOT NULL,
     confidence INTEGER NOT NULL, reaction_time_ms INTEGER NOT NULL,
@@ -72,7 +72,7 @@ const tagCols = db.prepare("PRAGMA table_info(tags)").all() as { name: string }[
 if (!tagCols.some((c) => c.name === "type")) {
   db.exec("ALTER TABLE tags ADD COLUMN type TEXT NOT NULL DEFAULT 'group'");
 }
-for (const table of ["classic_attempts", "pick_flag_attempts", "pick_country_attempts"]) {
+for (const table of ["classic_attempts", "pick_flag_attempts", "pick_item_attempts"]) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
   if (!cols.some((c) => c.name === "accidental")) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN accidental INTEGER NOT NULL DEFAULT 0`);
@@ -104,7 +104,7 @@ db.exec(`
   DELETE FROM tags;
   DELETE FROM classic_attempts;
   DELETE FROM pick_flag_attempts;
-  DELETE FROM pick_country_attempts;
+  DELETE FROM pick_item_attempts;
   DELETE FROM sessions;
   DELETE FROM flag_progress;
   DELETE FROM settings WHERE key = 'presentation_config';
@@ -115,7 +115,7 @@ console.log("Creating tags...");
 
 const tagData = [
   { id: uuid(), name: "Flags you should just know", description: "The classics - everyone knows these", sort_order: 0, type: "group" },
-  { id: uuid(), name: "Word association wizardry", description: "The country name literally tells you the colours", sort_order: 1, type: "group" },
+  { id: uuid(), name: "Word association wizardry", description: "The name literally tells you the colours", sort_order: 1, type: "group" },
   { id: uuid(), name: "The tricolour squad", description: "Three vertical or horizontal stripes - mix and match!", sort_order: 2, type: "group" },
   { id: uuid(), name: "Spot the difference", description: "Flags that are basically identical with tiny differences", sort_order: 3, type: "group" },
   { id: uuid(), name: "Cool unique designs", description: "Flags so distinctive you can't forget them", sort_order: 4, type: "group" },
@@ -228,13 +228,13 @@ for (const code of unassigned) {
 // ── Sessions & Attempts (365 days of use) ─────────────────
 console.log("Creating sessions and attempts (1 year of data)...");
 
-const modes = ["classic", "pick-the-flag", "pick-the-country"];
+const modes = ["classic", "pick-the-flag", "pick-the-item"];
 const exitConditions = ["normal", "streak", "speed"];
 
 const insertSession = db.prepare(`INSERT INTO sessions (id, mode, exit_condition, quick, started, ended, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
 const insertClassic = db.prepare(`INSERT INTO classic_attempts (id, session_id, flag, guess, correct, forgotten, confidence, reaction_time_ms, ts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 const insertPickFlag = db.prepare(`INSERT INTO pick_flag_attempts (id, session_id, flag, guess, options, correct, confidence, reaction_time_ms, ts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-const insertPickCountry = db.prepare(`INSERT INTO pick_country_attempts (id, session_id, flag, guess, options, correct, confidence, reaction_time_ms, ts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+const insertPickItem = db.prepare(`INSERT INTO pick_item_attempts (id, session_id, flag, guess, options, correct, confidence, reaction_time_ms, ts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
 // Confusion pairs for realistic wrong guesses
 const confusionPairs: Record<string, string[]> = {
@@ -318,7 +318,7 @@ db.transaction(() => {
             if (!options.includes(opt)) options.push(opt);
           }
           const guess = correct ? flag : randomChoice(options.filter((o: string) => o !== flag));
-          insertPickCountry.run(attemptId, sessionId, flag, guess, JSON.stringify(options), correct, confidence, reactionTimeMs, ts, createdAt);
+          insertPickItem.run(attemptId, sessionId, flag, guess, JSON.stringify(options), correct, confidence, reactionTimeMs, ts, createdAt);
         }
         totalAttempts++;
       }
@@ -504,7 +504,7 @@ const flagTagCount = (db.prepare("SELECT COUNT(*) as c FROM flag_tags").get() as
 const sessionCount = (db.prepare("SELECT COUNT(*) as c FROM sessions").get() as any).c;
 const classicCount = (db.prepare("SELECT COUNT(*) as c FROM classic_attempts").get() as any).c;
 const pickFlagCount = (db.prepare("SELECT COUNT(*) as c FROM pick_flag_attempts").get() as any).c;
-const pickCountryCount = (db.prepare("SELECT COUNT(*) as c FROM pick_country_attempts").get() as any).c;
+const pickItemCount = (db.prepare("SELECT COUNT(*) as c FROM pick_item_attempts").get() as any).c;
 const progressCount = (db.prepare("SELECT COUNT(*) as c FROM flag_progress").get() as any).c;
 const mnemonicCount = (db.prepare("SELECT COUNT(*) as c FROM flag_progress WHERE mnemonic != ''").get() as any).c;
 
@@ -512,7 +512,7 @@ console.log("\nDone! Mock data seeded (1 year of use):");
 console.log(`  - ${tagCount} tags`);
 console.log(`  - ${flagTagCount} flag-tag assignments (every flag tagged)`);
 console.log(`  - ${sessionCount} sessions`);
-console.log(`  - ${classicCount + pickFlagCount + pickCountryCount} total attempts (${classicCount} classic, ${pickFlagCount} pick-flag, ${pickCountryCount} pick-country)`);
+console.log(`  - ${classicCount + pickFlagCount + pickItemCount} total attempts (${classicCount} classic, ${pickFlagCount} pick-flag, ${pickItemCount} pick-item)`);
 console.log(`  - ${progressCount} flag progress records`);
 console.log(`  - ${mnemonicCount} mnemonics`);
 console.log(`  - Presentation config with all ${tagCount} tags selected`);

@@ -1,7 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router";
-import { flagByCode, type FlagProgress } from "@flag-quiz/shared";
-import { api } from "../../lib/api";
+import { type FlagProgress } from "@flag-quiz/shared";
+import { useCollectionApi } from "../../lib/api";
+import { useActiveCollection } from "../../lib/collection-context";
+import { useToast } from "../../components/ui/toast";
 
 interface AttemptRow {
   id: string;
@@ -24,60 +27,73 @@ export type { AttemptRow, ConfusionRow };
 
 export function useFlagDetail() {
   const { flag: flagCode } = useParams<{ flag: string }>();
-  const [progress, setProgress] = useState<FlagProgress | null>(null);
-  const [attempts, setAttempts] = useState<AttemptRow[]>([]);
-  const [confusions, setConfusions] = useState<ConfusionRow[]>([]);
+  const { collection, flagByCode } = useActiveCollection();
+  const api = useCollectionApi();
+
   const [mnemonic, setMnemonic] = useState("");
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [progressOverride, setProgressOverride] = useState<FlagProgress | null>(null);
 
-  const flag = flagCode ? flagByCode.get(flagCode) : null;
+  const { showToast } = useToast();
+  const flag = flagCode ? flagByCode(flagCode) : null;
 
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["flagDetail", collection.id, flagCode],
+    queryFn: () =>
+      Promise.all([
+        api.get<{ ok: boolean; records: FlagProgress[] }>("/flag-progress"),
+        api.get<{ ok: boolean; classic: AttemptRow[]; pick_flag: AttemptRow[]; pick_item: AttemptRow[] }>(`/attempts/${flagCode}`),
+        api.get<{ ok: boolean; confusions: ConfusionRow[] }>(`/stats/confusions/${flagCode}`),
+      ]),
+    enabled: !!flagCode,
+  });
+
+  const fetchedProgress = useMemo(() => {
+    if (!data || !flagCode) return null;
+    return data[0].records.find((r) => r.flag === flagCode) ?? null;
+  }, [data, flagCode]);
+
+  const progress = progressOverride ?? fetchedProgress;
+
+  const attempts = useMemo(() => {
+    if (!data) return [];
+    const all: AttemptRow[] = [
+      ...data[1].classic,
+      ...data[1].pick_flag,
+      ...data[1].pick_item,
+    ].sort((a, b) => b.ts.localeCompare(a.ts));
+    return all;
+  }, [data]);
+
+  const confusions = data?.[2].confusions ?? [];
+
+  // Sync mnemonic from progress when data loads
   useEffect(() => {
-    if (!flagCode) return;
-
-    Promise.all([
-      api.get<{ ok: boolean; records: FlagProgress[] }>("/flag-progress"),
-      api.get<{ ok: boolean; classic: AttemptRow[]; pick_flag: AttemptRow[]; pick_country: AttemptRow[] }>(`/attempts/${flagCode}`),
-      api.get<{ ok: boolean; confusions: ConfusionRow[] }>(`/stats/confusions/${flagCode}`),
-    ])
-      .then(([progressRes, attemptsRes, confusionsRes]) => {
-        const p = progressRes.records.find((r) => r.flag === flagCode) ?? null;
-        setProgress(p);
-        setMnemonic(p?.mnemonic ?? "");
-
-        // Merge all attempts and sort by timestamp
-        const all: AttemptRow[] = [
-          ...attemptsRes.classic,
-          ...attemptsRes.pick_flag,
-          ...attemptsRes.pick_country,
-        ].sort((a, b) => b.ts.localeCompare(a.ts));
-        setAttempts(all);
-
-        setConfusions(confusionsRes.confusions);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [flagCode]);
+    if (progress) {
+      setMnemonic(progress.mnemonic ?? "");
+    }
+  }, [progress]);
 
   async function saveMnemonic() {
     if (!flagCode || !progress) return;
     setSaving(true);
+    setProgressOverride({ ...progress, mnemonic });
     try {
       await api.post("/flag-progress", {
         ...progress,
         mnemonic,
         updated_at: new Date().toISOString(),
       });
-      setProgress({ ...progress, mnemonic });
     } catch {
-      // Error handled by api layer
+      setProgressOverride(null);
+      showToast("Failed to save note");
     } finally {
       setSaving(false);
     }
   }
 
   return {
+    collection,
     flag,
     progress,
     attempts,
@@ -86,6 +102,7 @@ export function useFlagDetail() {
     setMnemonic,
     saving,
     saveMnemonic,
-    loading,
+    loading: isLoading,
+    error: error?.message ?? null,
   };
 }

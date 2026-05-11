@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
-import { api } from "../../lib/api";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useCollectionApi } from "../../lib/api";
+import { useActiveCollection } from "../../lib/collection-context";
 
 interface SessionRow {
   id: string;
@@ -14,25 +16,25 @@ interface SessionRow {
 export type { SessionRow };
 
 export function useSessionsList() {
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [total, setTotal] = useState(0);
+  const { collection } = useActiveCollection();
+  const api = useCollectionApi();
   const [offset, setOffset] = useState(0);
   const limit = 20;
 
-  useEffect(() => {
-    setLoading(true);
-    api
-      .get<{ ok: boolean; sessions: SessionRow[]; total: number }>(
-        `/sessions?limit=${limit}&offset=${offset}`,
-      )
-      .then((res) => {
-        setSessions(res.sessions);
-        setTotal(res.total);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [offset]);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["sessions", collection.id, offset],
+    queryFn: () => api.get<{ ok: boolean; sessions: SessionRow[]; total: number }>(
+      `/sessions?limit=${limit}&offset=${offset}`,
+    ),
+  });
 
-  return { sessions, loading, total, offset, setOffset, limit };
+  return {
+    sessions: data?.sessions ?? [],
+    loading: isLoading,
+    error: error?.message ?? null,
+    total: data?.total ?? 0,
+    offset,
+    setOffset,
+    limit,
+  };
 }

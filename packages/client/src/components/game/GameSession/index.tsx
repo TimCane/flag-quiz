@@ -1,7 +1,8 @@
-import { Mode, ExitCondition, flagByCode } from "@flag-quiz/shared";
+import { useNavigate } from "react-router";
+import { Mode, ExitCondition } from "@flag-quiz/shared";
 import { ClassicRound } from "../ClassicRound";
 import { PickFlagRound } from "../PickFlagRound";
-import { PickCountryRound } from "../PickCountryRound";
+import { PickItemRound } from "../PickItemRound";
 import { ResultScreen } from "../ResultScreen";
 import { QuickFlash } from "../QuickFlash";
 import { QuickWrongScreen } from "../QuickWrongScreen";
@@ -9,6 +10,7 @@ import { SpeedTimer } from "../SpeedTimer";
 import { Button } from "../../ui/button";
 import { Spinner } from "../../ui/spinner";
 import { useGameSession } from "./useGameSession";
+import { useActiveCollection } from "../../../lib/collection-context";
 
 interface GameSessionProps {
   mode: string;
@@ -18,6 +20,8 @@ interface GameSessionProps {
 }
 
 export function GameSession({ mode, exitCondition, quick = false, resumeSession }: GameSessionProps) {
+  const { collection, flagByCode } = useActiveCollection();
+  const navigate = useNavigate();
   const {
     loading,
     error,
@@ -40,7 +44,6 @@ export function GameSession({ mode, exitCondition, quick = false, resumeSession 
     handleQuickCorrectDone,
     handleQuickWrongNext,
     endSession,
-    navigate,
     getTagNames,
   } = useGameSession({ mode, exitCondition, quick, resumeSession });
 
@@ -61,7 +64,7 @@ export function GameSession({ mode, exitCondition, quick = false, resumeSession 
         <div className="rounded-xl bg-red-500/10 px-6 py-3 text-red-400 border border-red-500/20">
           {error}
         </div>
-        <Button variant="outline" onClick={() => navigate("/")}>
+        <Button variant="outline" onClick={() => navigate(`/${collection.id}`)}>
           Back to Home
         </Button>
       </div>
@@ -72,7 +75,7 @@ export function GameSession({ mode, exitCondition, quick = false, resumeSession 
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 animate-fade-in">
         <div className="text-lg text-surface-400">No flags to review!</div>
-        <Button variant="outline" onClick={() => navigate("/")}>
+        <Button variant="outline" onClick={() => navigate(`/${collection.id}`)}>
           Back to Home
         </Button>
       </div>
@@ -106,12 +109,9 @@ export function GameSession({ mode, exitCondition, quick = false, resumeSession 
         </div>
       </div>
 
-      {/* Centered game area */}
-      <div className="flex flex-1 flex-col items-center justify-center w-full">
-
-      {/* Speed mode timer */}
+      {/* Speed mode timer — above centered area */}
       {exitCondition === ExitCondition.SPEED && phase === "prompt" && speedTimeoutMs > 0 && (
-        <div className="mb-6 w-full max-w-sm">
+        <div className="w-full max-w-sm mx-auto pb-4">
           <SpeedTimer
             key={currentIndex}
             timeoutMs={speedTimeoutMs}
@@ -121,20 +121,23 @@ export function GameSession({ mode, exitCondition, quick = false, resumeSession 
         </div>
       )}
 
+      {/* Centered game area */}
+      <div className="flex flex-1 flex-col items-center justify-center w-full">
+
       {phase === "prompt" && mode === Mode.CLASSIC && (
         <ClassicRound flagCode={currentFlag} onAnswer={handleClassicAnswer} />
       )}
 
       {phase === "prompt" && mode === Mode.PICK_THE_FLAG && currentOptions && (
         <PickFlagRound
-          countryName={flagByCode.get(currentFlag)?.name ?? currentFlag}
+          itemName={flagByCode(currentFlag)?.name ?? currentFlag}
           options={currentOptions}
           onAnswer={handlePickAnswer}
         />
       )}
 
-      {phase === "prompt" && mode === Mode.PICK_THE_COUNTRY && currentOptions && (
-        <PickCountryRound
+      {phase === "prompt" && mode === Mode.PICK_THE_ITEM && currentOptions && (
+        <PickItemRound
           flagCode={currentFlag}
           options={currentOptions}
           onAnswer={handlePickAnswer}

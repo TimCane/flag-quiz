@@ -1,5 +1,6 @@
 import { Card, CardContent } from "../../components/ui/card";
-import { MODE_LABELS, EXIT_LABELS, formatDuration } from "../../lib/labels";
+import { modeLabels, EXIT_LABELS, formatDuration } from "../../lib/labels";
+import { useActiveCollection } from "../../lib/collection-context";
 
 interface SessionMetadataProps {
   mode: string;
@@ -9,10 +10,12 @@ interface SessionMetadataProps {
 }
 
 export function SessionMetadata({ mode, exitCondition, started, duration }: SessionMetadataProps) {
+  const { collection } = useActiveCollection();
+  const labels = modeLabels(collection.itemLabel);
   return (
     <Card>
       <CardContent className="grid grid-cols-2 gap-4 p-5 sm:grid-cols-4">
-        <MetaItem label="Mode" value={MODE_LABELS[mode] ?? mode} />
+        <MetaItem label="Mode" value={labels[mode] ?? mode} />
         <MetaItem label="Exit Condition" value={EXIT_LABELS[exitCondition]} />
         <MetaItem
           label="Date"
