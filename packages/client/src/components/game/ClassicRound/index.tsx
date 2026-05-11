@@ -1,7 +1,7 @@
+import { useState } from "react";
 import { FlagDisplay } from "../FlagDisplay";
-import { CountrySelect } from "../CountrySelect";
+import { ItemSelect } from "../ItemSelect";
 import { Button } from "../../ui/button";
-import { useClassicRound } from "./useClassicRound";
 
 interface ClassicRoundProps {
   flagCode: string;
@@ -9,13 +9,7 @@ interface ClassicRoundProps {
 }
 
 export function ClassicRound({ flagCode, onAnswer }: ClassicRoundProps) {
-  const {
-    confirmingGiveUp,
-    handleSelect,
-    handleGiveUpClick,
-    handleConfirmGiveUp,
-    handleCancelGiveUp,
-  } = useClassicRound({ onAnswer });
+  const [confirmingGiveUp, setConfirmingGiveUp] = useState(false);
 
   return (
     <div className="flex flex-col items-center gap-8 animate-fade-in">
@@ -23,13 +17,13 @@ export function ClassicRound({ flagCode, onAnswer }: ClassicRoundProps) {
         <FlagDisplay code={flagCode} />
       </div>
 
-      <CountrySelect onSelect={handleSelect} />
+      <ItemSelect onSelect={(code) => onAnswer(code, false)} />
 
       {!confirmingGiveUp ? (
         <Button
           variant="ghost"
           size="default"
-          onClick={handleGiveUpClick}
+          onClick={() => setConfirmingGiveUp(true)}
           className="text-surface-600 hover:text-surface-400"
         >
           I don't know
@@ -40,14 +34,14 @@ export function ClassicRound({ flagCode, onAnswer }: ClassicRoundProps) {
           <Button
             variant="destructive"
             size="default"
-            onClick={handleConfirmGiveUp}
+            onClick={() => onAnswer(null, true)}
           >
             Yes, skip
           </Button>
           <Button
             variant="ghost"
             size="default"
-            onClick={handleCancelGiveUp}
+            onClick={() => setConfirmingGiveUp(false)}
           >
             Cancel
           </Button>

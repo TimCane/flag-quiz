@@ -1,6 +1,7 @@
-import { flagByCode } from "@flag-quiz/shared";
+import { useEffect } from "react";
+import { Check, X } from "lucide-react";
 import { FlagDisplay } from "../FlagDisplay";
-import { useQuickFlash } from "./useQuickFlash";
+import { useActiveCollection } from "../../../lib/collection-context";
 
 interface QuickFlashProps {
   flagCode: string;
@@ -9,8 +10,13 @@ interface QuickFlashProps {
 }
 
 export function QuickFlash({ flagCode, correct, onDone }: QuickFlashProps) {
-  useQuickFlash({ onDone });
-  const flag = flagByCode.get(flagCode);
+  const { flagByCode } = useActiveCollection();
+  const flag = flagByCode(flagCode);
+
+  useEffect(() => {
+    const timer = setTimeout(onDone, 1000);
+    return () => clearTimeout(timer);
+  }, [onDone]);
 
   return (
     <div className="flex flex-col items-center gap-5 animate-celebrate">
@@ -22,7 +28,7 @@ export function QuickFlash({ flagCode, correct, onDone }: QuickFlashProps) {
           correct ? "text-emerald-400" : "text-red-400"
         }`}
       >
-        {correct ? "\u2713" : "\u2717"} {flag?.name}
+        {correct ? <Check className="inline h-8 w-8" /> : <X className="inline h-8 w-8" />} {flag?.name}
       </div>
     </div>
   );

@@ -1,12 +1,13 @@
-import { useCountrySelect } from "./useCountrySelect";
+import { useItemSelect } from "./useItemSelect";
 
-interface CountrySelectProps {
+interface ItemSelectProps {
   onSelect: (code: string) => void;
   disabled?: boolean;
 }
 
-export function CountrySelect({ onSelect, disabled }: CountrySelectProps) {
+export function ItemSelect({ onSelect, disabled }: ItemSelectProps) {
   const {
+    itemLabel,
     query,
     isOpen,
     highlightIndex,
@@ -20,10 +21,10 @@ export function CountrySelect({ onSelect, disabled }: CountrySelectProps) {
     handleInputChange,
     handleFocus,
     handleBlur,
-  } = useCountrySelect({ onSelect });
+  } = useItemSelect({ onSelect });
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-sm">
+    <div ref={containerRef} className="relative w-full max-w-sm" role="combobox" aria-expanded={isOpen && filtered.length > 0} aria-haspopup="listbox">
       <input
         ref={inputRef}
         type="text"
@@ -32,14 +33,17 @@ export function CountrySelect({ onSelect, disabled }: CountrySelectProps) {
         onFocus={handleFocus}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
-        placeholder="Search country..."
+        placeholder={`Search ${itemLabel}...`}
         disabled={disabled}
         autoFocus
+        aria-autocomplete="list"
+        aria-activedescendant={isOpen && filtered.length > 0 ? `item-option-${filtered[highlightIndex]?.code}` : undefined}
         className="w-full rounded-xl border border-surface-700/80 bg-surface-800/60 px-4 py-3.5 text-white placeholder-surface-500 backdrop-blur-sm transition-all duration-200 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none"
       />
       {isOpen && filtered.length > 0 && (
         <div
           ref={listRef}
+          role="listbox"
           className={`absolute z-10 max-h-56 w-full overflow-auto rounded-xl border border-surface-700/80 bg-surface-900/95 shadow-2xl shadow-black/40 backdrop-blur-md ${
             openUpward ? "bottom-full mb-1" : "top-full mt-1"
           }`}
@@ -47,7 +51,10 @@ export function CountrySelect({ onSelect, disabled }: CountrySelectProps) {
           {filtered.map((flag, i) => (
             <button
               key={flag.code}
+              id={`item-option-${flag.code}`}
               type="button"
+              role="option"
+              aria-selected={i === highlightIndex}
               onMouseDown={(e) => {
                 e.preventDefault();
                 handleSelect(flag.code);

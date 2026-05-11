@@ -1,26 +1,25 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router";
 import {
-  type FlagProgress,
-  type Setting,
   type Rating,
   type SchedulingResult,
-  type ConfusionMap,
-  type Tag,
-  type FlagTag,
   Mode,
   ExitCondition,
-  flags,
-  createFsrs,
+  SETTING_KEYS,
   progressToCard,
   cardToProgress,
   getSchedulingChoices,
   buildConfusionMap,
   pickOptions,
 } from "@flag-quiz/shared";
-import { api } from "../../../lib/api";
+import { useActiveCollection } from "../../../lib/collection-context";
 import { saveActiveSession, clearActiveSession } from "../../../lib/active-session";
+import { useToast } from "../../ui/toast";
 import type { ActiveSession } from "../../../lib/active-session";
+import { useSessionInit } from "./useSessionInit.js";
+import { useAttemptSaver } from "./useAttemptSaver.js";
+import { useCollectionApi } from "../../../lib/api";
+import { flattenConfusions, checkExitCondition as checkExit, autoRate as computeAutoRate } from "../../../lib/game-logic";
 
 interface UseGameSessionProps {
   mode: string;
@@ -30,12 +29,6 @@ interface UseGameSessionProps {
 }
 
 type Phase = "prompt" | "result" | "quick-flash" | "quick-wrong";
-
-interface Percentiles {
-  global: { p25: number; p75: number } | null;
-  by_mode: Record<string, { p25: number; p75: number } | null>;
-  by_flag: Record<string, { p25: number; p75: number }>;
-}
 
 interface AttemptState {
   flagCode: string;
@@ -48,240 +41,90 @@ interface AttemptState {
   shouldEndAfterReview: boolean;
 }
 
-function flattenConfusions(cm: ConfusionMap): { flag: string; guess: string }[] {
-  const result: { flag: string; guess: string }[] = [];
-  const seen = new Set<string>();
-  for (const [flag, peers] of cm.confusions) {
-    for (const [guess, count] of peers) {
-      const key = [flag, guess].sort().join("-");
-      if (seen.has(key)) continue;
-      seen.add(key);
-      for (let i = 0; i < count; i++) result.push({ flag, guess });
-    }
-  }
-  return result;
-}
-
 export function useGameSession({ mode, exitCondition, quick = false, resumeSession }: UseGameSessionProps) {
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [queue, setQueue] = useState<string[]>([]);
-  const [progressMap, setProgressMap] = useState<Map<string, FlagProgress>>(new Map());
-  const [settings, setSettings] = useState<Map<string, string>>(new Map());
-  const [percentiles, setPercentiles] = useState<Percentiles | null>(null);
-  const [confusionMap, setConfusionMap] = useState<ConfusionMap>({ confusions: new Map() });
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [phase, setPhase] = useState<Phase>("prompt");
-  const [attempt, setAttempt] = useState<AttemptState | null>(null);
-  const [attemptCount, setAttemptCount] = useState(0);
-  const [correctCount, setCorrectCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [speedTimedOut, setSpeedTimedOut] = useState(false);
-  const [tagsMap, setTagsMap] = useState<Map<string, Tag>>(new Map());
-  const [flagTagsMap, setFlagTagsMap] = useState<Map<string, string[]>>(new Map());
-  const promptStartRef = useRef<number>(0);
+  const { collection } = useActiveCollection();
+  const collectionApi = useCollectionApi();
   const navigate = useNavigate();
 
-  const fsrs = useRef(createFsrs());
+  const {
+    sessionId,
+    queue,
+    progressMap,
+    setProgressMap,
+    settings,
+    percentiles,
+    confusionMap,
+    setConfusionMap,
+    currentIndex,
+    setCurrentIndex,
+    attemptCount,
+    setAttemptCount,
+    correctCount,
+    setCorrectCount,
+    loading,
+    error,
+    tagsMap,
+    flagTagsMap,
+    fsrs,
+  } = useSessionInit({ mode, exitCondition, quick, resumeSession });
 
-  // Speed timeout value
+  const { saveAttempt } = useAttemptSaver(mode);
+  const { showToast } = useToast();
+
+  const [phase, setPhase] = useState<Phase>("prompt");
+  const [attempt, setAttempt] = useState<AttemptState | null>(null);
+  const [speedTimedOut, setSpeedTimedOut] = useState(false);
+  const promptStartRef = useRef<number>(0);
+
+  // Reset prompt timer when loading completes
+  useEffect(() => {
+    if (!loading) promptStartRef.current = performance.now();
+  }, [loading]);
+
   const speedTimeoutMs = useMemo(() => {
     if (exitCondition !== ExitCondition.SPEED) return 0;
     const key =
       mode === Mode.CLASSIC
-        ? "speed_timeout_classic_ms"
+        ? SETTING_KEYS.SPEED_TIMEOUT_CLASSIC_MS
         : mode === Mode.PICK_THE_FLAG
-          ? "speed_timeout_pick_flag_ms"
-          : "speed_timeout_pick_country_ms";
+          ? SETTING_KEYS.SPEED_TIMEOUT_PICK_FLAG_MS
+          : SETTING_KEYS.SPEED_TIMEOUT_PICK_ITEM_MS;
     return parseInt(settings.get(key) || "5000", 10);
   }, [mode, exitCondition, settings]);
-
-  // Initialize session
-  useEffect(() => {
-    async function init() {
-      try {
-        const requests: Promise<any>[] = [
-          api.get<{ ok: boolean; records: FlagProgress[] }>("/flag-progress"),
-          api.get<{ ok: boolean; settings: Setting[] }>("/settings"),
-          api.get<{ ok: boolean; wrong_guesses: { flag: string; guess: string }[] }>("/attempts/wrong-guesses"),
-          api.get<{ ok: boolean; tags: Tag[] }>("/tags"),
-          api.get<{ ok: boolean; flag_tags: FlagTag[] }>("/flag-tags"),
-        ];
-        if (quick) {
-          requests.push(api.get<{ ok: boolean } & Percentiles>("/stats/percentiles"));
-        }
-        const [progressRes, settingsRes, wrongGuessesRes, tagsRes, flagTagsRes, percentilesRes] = await Promise.all(requests);
-
-        if (percentilesRes) {
-          setPercentiles({
-            global: percentilesRes.global,
-            by_mode: percentilesRes.by_mode,
-            by_flag: percentilesRes.by_flag,
-          });
-        }
-
-        const pMap = new Map<string, FlagProgress>();
-        for (const p of progressRes.records) pMap.set(p.flag, p);
-        setProgressMap(pMap);
-
-        const sMap = new Map<string, string>();
-        for (const s of settingsRes.settings) sMap.set(s.key, s.value);
-        setSettings(sMap);
-
-        setConfusionMap(buildConfusionMap(wrongGuessesRes.wrong_guesses ?? []));
-
-        const tMap = new Map<string, Tag>();
-        for (const t of tagsRes.tags) tMap.set(t.id, t);
-        setTagsMap(tMap);
-
-        const ftMap = new Map<string, string[]>();
-        for (const ft of flagTagsRes.flag_tags) {
-          const list = ftMap.get(ft.flag) || [];
-          list.push(ft.tag_id);
-          ftMap.set(ft.flag, list);
-        }
-        setFlagTagsMap(ftMap);
-
-        const retention = parseFloat(sMap.get("fsrs_request_retention") || "0.9");
-        const maxInterval = parseInt(sMap.get("fsrs_maximum_interval") || "365", 10);
-        fsrs.current = createFsrs({ requestRetention: retention, maximumInterval: maxInterval });
-
-        const now = new Date();
-        // Random tiebreaker so flags without distinct FSRS ordering aren't alphabetical
-        const rng = new Map<string, number>();
-        for (const f of flags) rng.set(f.code, Math.random());
-        const sorted = [...flags].sort((a, b) => {
-          const pa = pMap.get(a.code);
-          const pb = pMap.get(b.code);
-          if (!pa && pb) return -1;
-          if (pa && !pb) return 1;
-          if (!pa && !pb) return rng.get(a.code)! - rng.get(b.code)!;
-          const dueA = pa!.due ? new Date(pa!.due) : now;
-          const dueB = pb!.due ? new Date(pb!.due) : now;
-          const diff = dueA.getTime() - dueB.getTime();
-          return diff !== 0 ? diff : rng.get(a.code)! - rng.get(b.code)!;
-        });
-
-        let finalList = sorted;
-        if (exitCondition === ExitCondition.DUE) {
-          const todayEnd = new Date(now);
-          todayEnd.setHours(23, 59, 59, 999);
-          finalList = sorted.filter((f) => {
-            const p = pMap.get(f.code);
-            if (!p || !p.due) return false;
-            return new Date(p.due) <= todayEnd;
-          });
-        }
-        const sortedQueue = finalList.map((f) => f.code);
-
-        // Resume existing session or create new one
-        if (resumeSession) {
-          setSessionId(resumeSession.sessionId);
-          setQueue(resumeSession.queue);
-          setCurrentIndex(resumeSession.currentIndex);
-          setAttemptCount(resumeSession.attemptCount);
-          setCorrectCount(resumeSession.correctCount);
-        } else {
-          setQueue(sortedQueue);
-          const id = crypto.randomUUID();
-          await api.post("/sessions", {
-            id,
-            mode,
-            exit_condition: exitCondition,
-            quick,
-            started: now.toISOString(),
-          });
-          setSessionId(id);
-
-          // Save initial active session
-          saveActiveSession({
-            sessionId: id,
-            mode,
-            exitCondition,
-            queue: sortedQueue,
-            currentIndex: 0,
-            attemptCount: 0,
-            correctCount: 0,
-          });
-        }
-
-        setLoading(false);
-        promptStartRef.current = performance.now();
-      } catch (err: any) {
-        setError(err.message || "Failed to start session");
-        setLoading(false);
-      }
-    }
-    init();
-  }, [mode, exitCondition]);
 
   const currentFlag = queue[currentIndex];
 
   const currentOptions = useMemo(() => {
     if (!currentFlag || mode === Mode.CLASSIC) return null;
-    const minOpts = parseInt(settings.get("pick_options_min") || "2", 10);
-    const maxOpts = parseInt(settings.get("pick_options_max") || "6", 10);
-    return pickOptions(currentFlag, confusionMap, minOpts, maxOpts);
-  }, [currentFlag, mode, confusionMap, settings]);
+    const minOpts = parseInt(settings.get(SETTING_KEYS.PICK_OPTIONS_MIN) || "2", 10);
+    const maxOpts = parseInt(settings.get(SETTING_KEYS.PICK_OPTIONS_MAX) || "6", 10);
+    return pickOptions(currentFlag, collection.flags, confusionMap, minOpts, maxOpts);
+  }, [currentFlag, mode, confusionMap, settings, collection.flags]);
 
   function checkExitCondition(correct: boolean, reactionTimeMs: number): boolean {
-    if (exitCondition === ExitCondition.STREAK && !correct) return true;
-    if (exitCondition === ExitCondition.SPEED && reactionTimeMs > speedTimeoutMs) return true;
-    if (currentIndex + 1 >= queue.length) return true;
-    return false;
+    return checkExit(exitCondition, correct, reactionTimeMs, speedTimeoutMs, currentIndex, queue.length);
   }
 
-  /** Auto-rate based on reaction time percentiles with fallback chain */
   function autoRate(flagCode: string, reactionTimeMs: number): Rating {
-    if (!percentiles) return 3 as Rating; // Good fallback
-
-    // Fallback chain: per-flag -> per-mode -> global
-    const thresholds =
-      percentiles.by_flag[flagCode] ??
-      percentiles.by_mode[mode] ??
-      percentiles.global;
-
-    if (!thresholds) return 3 as Rating;
-
-    if (reactionTimeMs <= thresholds.p25) return 4 as Rating; // Easy
-    if (reactionTimeMs <= thresholds.p75) return 3 as Rating; // Good
-    return 2 as Rating; // Hard
+    return computeAutoRate(flagCode, reactionTimeMs, mode, percentiles);
   }
 
   const submitAnswer = useCallback(
     (guess: string | null, forgotten: boolean, options: string[] | null) => {
       if (!currentFlag) return;
-
       const reactionTimeMs = Math.round(performance.now() - promptStartRef.current);
       const correct = guess === currentFlag;
-
       const progress = progressMap.get(currentFlag) ?? null;
       const card = progressToCard(progress);
       const choices = getSchedulingChoices(fsrs.current, card);
-
       const shouldEnd = checkExitCondition(correct, reactionTimeMs);
 
-      setAttempt({
-        flagCode: currentFlag,
-        guess,
-        correct,
-        forgotten,
-        reactionTimeMs,
-        options,
-        schedulingChoices: choices,
-        shouldEndAfterReview: shouldEnd,
-      });
+      setAttempt({ flagCode: currentFlag, guess, correct, forgotten, reactionTimeMs, options, schedulingChoices: choices, shouldEndAfterReview: shouldEnd });
       setSpeedTimedOut(false);
 
-      if (quick && correct) {
-        // Quick mode correct: show brief flash, auto-rate
-        setPhase("quick-flash");
-      } else if (quick && !correct) {
-        // Quick mode wrong: show mnemonic editor
-        setPhase("quick-wrong");
-      } else {
-        setPhase("result");
-      }
+      if (quick && correct) setPhase("quick-flash");
+      else if (quick && !correct) setPhase("quick-wrong");
+      else setPhase("result");
     },
     [currentFlag, progressMap, currentIndex, queue.length, exitCondition, speedTimeoutMs, quick],
   );
@@ -296,27 +139,40 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
     [submitAnswer, currentOptions],
   );
 
-  // Speed mode timeout handler -- submit as "too slow"
   const handleSpeedTimeout = useCallback(() => {
     if (!currentFlag || phase !== "prompt") return;
     setSpeedTimedOut(true);
-
     const progress = progressMap.get(currentFlag) ?? null;
     const card = progressToCard(progress);
     const choices = getSchedulingChoices(fsrs.current, card);
-
-    setAttempt({
-      flagCode: currentFlag,
-      guess: null,
-      correct: false,
-      forgotten: true,
-      reactionTimeMs: speedTimeoutMs,
-      options: currentOptions,
-      schedulingChoices: choices,
-      shouldEndAfterReview: true,
-    });
+    setAttempt({ flagCode: currentFlag, guess: null, correct: false, forgotten: true, reactionTimeMs: speedTimeoutMs, options: currentOptions, schedulingChoices: choices, shouldEndAfterReview: true });
     setPhase("result");
   }, [currentFlag, phase, progressMap, speedTimeoutMs, currentOptions]);
+
+  function advanceOrEnd(newAttemptCount: number, newCorrectCount: number) {
+    if (attempt?.shouldEndAfterReview) {
+      clearActiveSession();
+      return true;
+    }
+
+    const nextIndex = currentIndex + 1;
+    setCurrentIndex(nextIndex);
+    setPhase("prompt");
+    setAttempt(null);
+    promptStartRef.current = performance.now();
+
+    saveActiveSession({
+      sessionId: sessionId!,
+      mode,
+      exitCondition,
+      queue,
+      currentIndex: nextIndex,
+      attemptCount: newAttemptCount,
+      correctCount: newCorrectCount,
+      collectionId: collection.id,
+    });
+    return false;
+  }
 
   const handleRate = useCallback(
     (rating: Rating, mnemonic: string) => {
@@ -330,7 +186,6 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
       setAttemptCount(newAttemptCount);
       setCorrectCount(newCorrectCount);
 
-      // Update local state immediately
       const updatedProgress = cardToProgress(attempt.flagCode, chosen.card);
       const existingMnemonic = progressMap.get(attempt.flagCode)?.mnemonic || "";
       const finalMnemonic = mnemonic || existingMnemonic;
@@ -343,128 +198,65 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
 
       if (!attempt.correct && attempt.guess) {
         setConfusionMap((prev) =>
-          buildConfusionMap([
-            ...flattenConfusions(prev),
-            { flag: attempt.flagCode, guess: attempt.guess! },
-          ]),
+          buildConfusionMap([...flattenConfusions(prev), { flag: attempt.flagCode, guess: attempt.guess! }]),
         );
       }
 
-      // Fire-and-forget: save to server in background
-      const attemptId = crypto.randomUUID();
       const ts = new Date().toISOString();
-      const baseData = {
-        id: attemptId,
-        session_id: sessionId,
-        flag: attempt.flagCode,
-        correct: attempt.correct,
-        confidence: rating,
-        reaction_time_ms: attempt.reactionTimeMs,
-        ts,
-      };
-
       const savePromise = (async () => {
-        if (mode === Mode.CLASSIC) {
-          await api.post("/classic-attempts", { ...baseData, guess: attempt.guess, forgotten: attempt.forgotten });
-        } else if (mode === Mode.PICK_THE_FLAG) {
-          await api.post("/pick-flag-attempts", { ...baseData, guess: attempt.guess ?? attempt.flagCode, options: attempt.options! });
-        } else if (mode === Mode.PICK_THE_COUNTRY) {
-          await api.post("/pick-country-attempts", { ...baseData, guess: attempt.guess ?? attempt.flagCode, options: attempt.options! });
-        }
-        await api.post("/flag-progress", { ...updatedProgress, mnemonic: finalMnemonic });
+        await saveAttempt({
+          id: crypto.randomUUID(),
+          session_id: sessionId,
+          flag: attempt.flagCode,
+          correct: attempt.correct,
+          confidence: rating,
+          reaction_time_ms: attempt.reactionTimeMs,
+          ts,
+          guess: attempt.guess,
+          forgotten: attempt.forgotten,
+          options: attempt.options,
+        });
+        await collectionApi.post("/flag-progress", { ...updatedProgress, mnemonic: finalMnemonic });
       })();
 
-      // Don't block UI on save -- just log errors
-      savePromise.catch((err) => console.error("Save failed:", err));
+      savePromise.catch(() => showToast("Failed to save — check your connection"));
 
-      // Advance UI immediately
-      if (attempt.shouldEndAfterReview) {
-        clearActiveSession();
-        // Wait for save before ending so the data is there for the summary
+      const shouldEnd = advanceOrEnd(newAttemptCount, newCorrectCount);
+      if (shouldEnd) {
         savePromise.then(() => endSession()).catch(() => endSession());
-        return;
       }
-
-      const nextIndex = currentIndex + 1;
-      setCurrentIndex(nextIndex);
-      setPhase("prompt");
-      setAttempt(null);
-      promptStartRef.current = performance.now();
-
-      // Persist active session for rejoin
-      saveActiveSession({
-        sessionId,
-        mode,
-        exitCondition,
-        queue,
-        currentIndex: nextIndex,
-        attemptCount: newAttemptCount,
-        correctCount: newCorrectCount,
-      });
     },
-    [attempt, sessionId, mode, progressMap, exitCondition, currentIndex, queue, attemptCount, correctCount],
+    [attempt, sessionId, mode, progressMap, exitCondition, currentIndex, queue, attemptCount, correctCount, saveAttempt, collectionApi, collection.id],
   );
 
-  /** Mark current attempt as accidental — saves with accidental flag, skips FSRS update */
-  const handleAccidental = useCallback(
-    () => {
-      if (!attempt || !sessionId) return;
+  const handleAccidental = useCallback(() => {
+    if (!attempt || !sessionId) return;
 
-      const newAttemptCount = attemptCount + 1;
-      // Don't count accidental in correct tally
-      setAttemptCount(newAttemptCount);
+    const newAttemptCount = attemptCount + 1;
+    setAttemptCount(newAttemptCount);
 
-      // Fire-and-forget: save attempt with accidental=true, no progress update
-      const attemptId = crypto.randomUUID();
-      const ts = new Date().toISOString();
-      const baseData = {
-        id: attemptId,
-        session_id: sessionId,
-        flag: attempt.flagCode,
-        correct: attempt.correct,
-        confidence: 3, // Neutral — doesn't matter since it's excluded
-        reaction_time_ms: attempt.reactionTimeMs,
-        ts,
-        accidental: true,
-      };
+    const ts = new Date().toISOString();
+    const savePromise = saveAttempt({
+      id: crypto.randomUUID(),
+      session_id: sessionId,
+      flag: attempt.flagCode,
+      correct: attempt.correct,
+      confidence: 3,
+      reaction_time_ms: attempt.reactionTimeMs,
+      ts,
+      guess: attempt.guess,
+      forgotten: attempt.forgotten,
+      options: attempt.options,
+      accidental: true,
+    });
+    savePromise.catch((err) => console.error("Save failed:", err));
 
-      const savePromise = (async () => {
-        if (mode === Mode.CLASSIC) {
-          await api.post("/classic-attempts", { ...baseData, guess: attempt.guess, forgotten: attempt.forgotten });
-        } else if (mode === Mode.PICK_THE_FLAG) {
-          await api.post("/pick-flag-attempts", { ...baseData, guess: attempt.guess ?? attempt.flagCode, options: attempt.options! });
-        } else if (mode === Mode.PICK_THE_COUNTRY) {
-          await api.post("/pick-country-attempts", { ...baseData, guess: attempt.guess ?? attempt.flagCode, options: attempt.options! });
-        }
-      })();
-      savePromise.catch((err) => console.error("Save failed:", err));
+    const shouldEnd = advanceOrEnd(newAttemptCount, correctCount);
+    if (shouldEnd) {
+      savePromise.then(() => endSession()).catch(() => endSession());
+    }
+  }, [attempt, sessionId, mode, exitCondition, currentIndex, queue, attemptCount, correctCount, saveAttempt, collection.id]);
 
-      if (attempt.shouldEndAfterReview) {
-        clearActiveSession();
-        savePromise.then(() => endSession()).catch(() => endSession());
-        return;
-      }
-
-      const nextIndex = currentIndex + 1;
-      setCurrentIndex(nextIndex);
-      setPhase("prompt");
-      setAttempt(null);
-      promptStartRef.current = performance.now();
-
-      saveActiveSession({
-        sessionId,
-        mode,
-        exitCondition,
-        queue,
-        currentIndex: nextIndex,
-        attemptCount: newAttemptCount,
-        correctCount,
-      });
-    },
-    [attempt, sessionId, mode, exitCondition, currentIndex, queue, attemptCount, correctCount],
-  );
-
-  /** Quick mode: correct flash done -- auto-rate and advance */
   const handleQuickCorrectDone = useCallback(() => {
     if (!attempt) return;
     const rating = autoRate(attempt.flagCode, attempt.reactionTimeMs);
@@ -472,16 +264,14 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
     handleRate(rating, mnemonic);
   }, [attempt, progressMap, handleRate]);
 
-  /** Quick mode: wrong -- user clicked Next with mnemonic */
   const handleQuickWrongNext = useCallback(
     (mnemonic: string) => {
       if (!attempt) return;
-      handleRate(1 as Rating, mnemonic); // Always "Again" for wrong
+      handleRate(1 as Rating, mnemonic);
     },
     [attempt, handleRate],
   );
 
-  // Keyboard shortcuts: 1-4 for rating, 0 for accidental on result screen
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (phase !== "result" || !attempt) return;
@@ -505,25 +295,26 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
     if (!sessionId) return;
     clearActiveSession();
     try {
-      await api.put(`/sessions/${sessionId}`, { ended: new Date().toISOString() });
+      await collectionApi.put(`/sessions/${sessionId}`, { ended: new Date().toISOString() });
     } catch {
       // Best effort
     }
-    navigate(`/summary/${sessionId}`);
+    if (attemptCount === 0) {
+      navigate(`/${collection.id}`);
+    } else {
+      navigate(`/${collection.id}/summary/${sessionId}`);
+    }
   }
 
   const getTagNames = useCallback(
     (flagCode: string): string[] => {
       const tagIds = flagTagsMap.get(flagCode) || [];
-      return tagIds
-        .map((id) => tagsMap.get(id)?.name)
-        .filter((n): n is string => !!n);
+      return tagIds.map((id) => tagsMap.get(id)?.name).filter((n): n is string => !!n);
     },
     [flagTagsMap, tagsMap],
   );
 
   return {
-    // State
     loading,
     error,
     currentFlag,
@@ -537,12 +328,6 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
     speedTimeoutMs,
     queue,
     progressMap,
-
-    // Derived
-    mode,
-    exitCondition,
-
-    // Handlers
     handleClassicAnswer,
     handlePickAnswer,
     handleSpeedTimeout,
@@ -551,7 +336,6 @@ export function useGameSession({ mode, exitCondition, quick = false, resumeSessi
     handleQuickCorrectDone,
     handleQuickWrongNext,
     endSession,
-    navigate,
     getTagNames,
   };
 }

@@ -1,20 +1,20 @@
 import { FlagDisplay } from "../FlagDisplay";
 
 interface PickFlagRoundProps {
-  countryName: string;
+  itemName: string;
   options: string[];
   onAnswer: (guess: string) => void;
 }
 
-export function PickFlagRound({ countryName, options, onAnswer }: PickFlagRoundProps) {
+export function PickFlagRound({ itemName, options, onAnswer }: PickFlagRoundProps) {
   return (
     <div className="flex flex-col items-center gap-8 animate-fade-in">
       <div className="text-center">
-        <div className="font-display text-4xl text-white">{countryName}</div>
+        <div className="font-display text-4xl text-white">{itemName}</div>
         <div className="mt-1 text-sm text-surface-500">Tap the correct flag</div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className={`grid gap-4 ${options.length <= 2 ? "grid-cols-2" : options.length === 3 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3"}`}>
         {options.map((code) => (
           <button
             key={code}

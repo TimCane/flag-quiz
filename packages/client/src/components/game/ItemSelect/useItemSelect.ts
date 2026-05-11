@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { flags } from "@flag-quiz/shared";
+import { useActiveCollection } from "../../../lib/collection-context";
 
-interface UseCountrySelectProps {
+interface UseItemSelectProps {
   onSelect: (code: string) => void;
 }
 
-export function useCountrySelect({ onSelect }: UseCountrySelectProps) {
+export function useItemSelect({ onSelect }: UseItemSelectProps) {
+  const { collection } = useActiveCollection();
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(0);
@@ -15,7 +16,7 @@ export function useCountrySelect({ onSelect }: UseCountrySelectProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const filtered = query
-    ? flags.filter((f) => f.name.toLowerCase().includes(query.toLowerCase()))
+    ? collection.flags.filter((f) => f.name.toLowerCase().includes(query.toLowerCase()))
     : [];
 
   useEffect(() => {
@@ -29,15 +30,12 @@ export function useCountrySelect({ onSelect }: UseCountrySelectProps) {
     item?.scrollIntoView({ block: "nearest" });
   }, [highlightIndex, isOpen]);
 
-  // Determine if dropdown should open upward based on available space
   const updateDropdownDirection = useCallback(() => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    // Use visualViewport to account for mobile keyboard
     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
     const spaceBelow = viewportHeight - rect.bottom;
     const spaceAbove = rect.top;
-    // Open upward if less than 200px below and more space above
     setOpenUpward(spaceBelow < 200 && spaceAbove > spaceBelow);
   }, []);
 
@@ -45,7 +43,6 @@ export function useCountrySelect({ onSelect }: UseCountrySelectProps) {
     if (!isOpen) return;
     updateDropdownDirection();
 
-    // Listen for visual viewport resize (keyboard open/close)
     const vv = window.visualViewport;
     if (vv) {
       vv.addEventListener("resize", updateDropdownDirection);
@@ -103,6 +100,7 @@ export function useCountrySelect({ onSelect }: UseCountrySelectProps) {
   }
 
   return {
+    itemLabel: collection.itemLabel,
     query,
     isOpen,
     highlightIndex,

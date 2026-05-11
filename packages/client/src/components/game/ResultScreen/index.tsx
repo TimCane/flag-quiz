@@ -1,9 +1,10 @@
-import { flagByCode, type SchedulingResult, type Rating } from "@flag-quiz/shared";
+import { useState } from "react";
+import type { SchedulingResult, Rating } from "@flag-quiz/shared";
 import { FlagDisplay } from "../FlagDisplay";
-import { useResultScreen } from "./useResultScreen";
 import { MnemonicTextarea } from "../../ui/mnemonic-textarea";
 import { TagPills } from "../../ui/tag-pills";
 import { RATING_LABELS, RATING_COLORS } from "../../../lib/labels";
+import { useActiveCollection } from "../../../lib/collection-context";
 
 interface ResultScreenProps {
   flagCode: string;
@@ -28,9 +29,11 @@ export function ResultScreen({
   onAccidental,
   tagNames = [],
 }: ResultScreenProps) {
-  const { mnemonic, setMnemonic } = useResultScreen({ initialMnemonic });
-  const flag = flagByCode.get(flagCode);
-  const guessFlag = guess ? flagByCode.get(guess) : null;
+  const { flagByCode } = useActiveCollection();
+  const [mnemonic, setMnemonic] = useState(initialMnemonic);
+
+  const flag = flagByCode(flagCode);
+  const guessFlag = guess ? flagByCode(guess) : null;
 
   return (
     <div className="flex flex-col items-center animate-celebrate">

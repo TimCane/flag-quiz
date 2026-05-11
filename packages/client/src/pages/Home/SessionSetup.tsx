@@ -2,7 +2,8 @@ import { Mode, ExitCondition } from "@flag-quiz/shared";
 import { Button } from "../../components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
 import { Toggle } from "../../components/ui/toggle";
-import { MODE_LABELS, MODE_DESCRIPTIONS, EXIT_LABELS, EXIT_DESCRIPTIONS } from "../../lib/labels";
+import { modeLabels, modeDescriptions, EXIT_LABELS, EXIT_DESCRIPTIONS } from "../../lib/labels";
+import { useActiveCollection } from "../../lib/collection-context";
 
 interface SessionSetupProps {
   mode: string;
@@ -23,6 +24,10 @@ export function SessionSetup({
   setQuick,
   onStart,
 }: SessionSetupProps) {
+  const { collection } = useActiveCollection();
+  const labels = modeLabels(collection.itemLabel);
+  const descriptions = modeDescriptions(collection.itemLabel);
+
   return (
     <Card>
       <CardHeader>
@@ -42,8 +47,8 @@ export function SessionSetup({
                     : "border-surface-700/60 hover:border-surface-600 hover:bg-surface-800/30 hover:shadow-md"
                 }`}
               >
-                <div className="font-semibold text-surface-300">{MODE_LABELS[m]}</div>
-                <div className="mt-0.5 text-sm text-surface-500">{MODE_DESCRIPTIONS[m]}</div>
+                <div className="font-semibold text-surface-300">{labels[m]}</div>
+                <div className="mt-0.5 text-sm text-surface-500">{descriptions[m]}</div>
               </button>
             ))}
           </div>
@@ -51,7 +56,7 @@ export function SessionSetup({
 
         <div className="space-y-2.5">
           <label className="text-sm font-semibold uppercase tracking-widest text-surface-500">Exit Condition</label>
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             {Object.values(ExitCondition).map((ec) => (
               <button
                 key={ec}
