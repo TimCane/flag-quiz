@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect } from "react";
 import { type Tag, TAG_TYPES, type TagType } from "@flag-quiz/shared";
 import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { ChevronDown, ChevronRight, GripVertical, Trash2, Plus } from "lucide-react";
 import { useTagsSection } from "./useTagsSection";
+import { useTagRow } from "./useTagRow";
 
 interface TagRowProps {
   tag: Tag;
@@ -32,30 +32,16 @@ function TagRow({
   onDelete,
   autoFocusName,
 }: TagRowProps) {
-  const [name, setName] = useState(tag.name);
-  const [description, setDescription] = useState(tag.description);
-  const nameRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setName(tag.name);
-    setDescription(tag.description);
-  }, [tag.name, tag.description]);
-
-  useEffect(() => {
-    if (autoFocusName) nameRef.current?.focus();
-  }, [autoFocusName]);
-
-  function handleNameBlur() {
-    if (name !== tag.name) onUpdate(tag.id, { name });
-  }
-
-  function handleDescBlur() {
-    if (description !== tag.description) onUpdate(tag.id, { description });
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-  }
+  const {
+    name,
+    setName,
+    description,
+    setDescription,
+    nameRef,
+    handleNameBlur,
+    handleDescBlur,
+    handleKeyDown,
+  } = useTagRow({ tag, autoFocusName, onUpdate });
 
   return (
     <div
@@ -128,40 +114,19 @@ export function TagsSection() {
     loading,
     expanded,
     setExpanded,
-    addTag,
     updateTag,
     deleteTag,
-    reorder,
+    dragIndex,
+    dragOverIndex,
+    newTagId,
+    setDragIndex,
+    handleDragOver,
+    handleDrop,
+    handleDragEnd,
+    handleAdd,
   } = useTagsSection();
 
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [newTagId, setNewTagId] = useState<string | null>(null);
-
   if (loading) return null;
-
-  function handleDragOver(e: React.DragEvent, index: number) {
-    e.preventDefault();
-    setDragOverIndex(index);
-  }
-
-  function handleDrop(index: number) {
-    if (dragIndex !== null && dragIndex !== index) {
-      reorder(dragIndex, index);
-    }
-    setDragIndex(null);
-    setDragOverIndex(null);
-  }
-
-  function handleDragEnd() {
-    setDragIndex(null);
-    setDragOverIndex(null);
-  }
-
-  async function handleAdd() {
-    const id = await addTag();
-    if (id) setNewTagId(id);
-  }
 
   return (
     <Card>

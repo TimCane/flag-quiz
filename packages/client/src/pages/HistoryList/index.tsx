@@ -1,7 +1,6 @@
 import { useHistoryList, type SortKey, type StateFilter } from "./useHistoryList";
 import { PageSkeleton } from "../../components/ui/skeleton";
 import { FilterSelect } from "../../components/ui/filter-select";
-import { CONTINENT_LABELS } from "../../lib/labels";
 import { FlagRow } from "./FlagRow";
 
 export function HistoryList() {
@@ -12,8 +11,8 @@ export function HistoryList() {
     loading,
     sortKey,
     setSortKey,
-    continentFilter,
-    setContinentFilter,
+    groupFilter,
+    setGroupFilter,
     stateFilter,
     setStateFilter,
     mnemonicFilter,
@@ -21,6 +20,8 @@ export function HistoryList() {
     search,
     setSearch,
     sortedFlags,
+    groupLabel,
+    groups,
   } = useHistoryList();
 
   if (loading) return <PageSkeleton rows={8} />;
@@ -39,11 +40,11 @@ export function HistoryList() {
 
       <div className="sticky top-0 z-10 -mx-4 flex flex-wrap gap-2 bg-surface-950/80 px-4 py-2 backdrop-blur-lg">
         <FilterSelect
-          value={continentFilter}
-          onChange={setContinentFilter}
+          value={groupFilter}
+          onChange={setGroupFilter}
           options={[
-            { value: "all", label: "All continents" },
-            ...Object.entries(CONTINENT_LABELS).map(([v, l]) => ({ value: v, label: l })),
+            { value: "all", label: `All ${groupLabel.toLowerCase()}s` },
+            ...groups.map((g) => ({ value: g.id, label: g.name })),
           ]}
         />
         <FilterSelect

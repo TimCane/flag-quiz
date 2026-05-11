@@ -1,5 +1,6 @@
 import { Link } from "react-router";
-import { MODE_LABELS, EXIT_LABELS, formatDuration } from "../../lib/labels";
+import { modeLabels, EXIT_LABELS, formatDuration } from "../../lib/labels";
+import { useActiveCollection } from "../../lib/collection-context";
 
 interface SessionRowProps {
   id: string;
@@ -12,6 +13,8 @@ interface SessionRowProps {
 }
 
 export function SessionRow({ id, mode, exitCondition, started, ended, accuracy, attemptCount }: SessionRowProps) {
+  const { collection } = useActiveCollection();
+  const labels = modeLabels(collection.itemLabel);
   const startedDate = new Date(started);
   const endedDate = ended ? new Date(ended) : null;
   const duration = endedDate
@@ -20,12 +23,12 @@ export function SessionRow({ id, mode, exitCondition, started, ended, accuracy, 
 
   return (
     <Link
-      to={`/sessions/${id}`}
+      to={`/${collection.id}/sessions/${id}`}
       className="flex items-center justify-between rounded-xl border border-surface-800/80 bg-surface-900/50 p-4 transition-all duration-200 hover:border-surface-700 hover:bg-surface-800/50 glow-border"
     >
       <div>
         <div className="font-display text-base text-surface-300">
-          {MODE_LABELS[mode] ?? mode}
+          {labels[mode] ?? mode}
           <span className="ml-2 text-sm font-normal text-surface-500">
             {EXIT_LABELS[exitCondition] ?? exitCondition}
           </span>
@@ -33,7 +36,7 @@ export function SessionRow({ id, mode, exitCondition, started, ended, accuracy, 
         <div className="mt-0.5 text-sm text-surface-500">
           {startedDate.toLocaleDateString()}{" "}
           {startedDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          {duration !== null && ` \u00B7 ${formatDuration(duration)}`}
+          {duration !== null && ` · ${formatDuration(duration)}`}
         </div>
       </div>
       <div className="text-right">

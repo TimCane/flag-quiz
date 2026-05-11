@@ -3,13 +3,14 @@ import { FlagDisplay } from "../../components/game/FlagDisplay";
 import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
 import { PageSkeleton } from "../../components/ui/skeleton";
 import { MnemonicTextarea } from "../../components/ui/mnemonic-textarea";
-import { CONTINENT_LABELS_FULL } from "../../lib/labels";
+import { groupName } from "../../lib/labels";
 import { ProgressCard } from "./ProgressCard";
 import { ConfusionsList } from "./ConfusionsList";
 import { AttemptsTimeline } from "./AttemptsTimeline";
 
 export function FlagDetail() {
   const {
+    collection,
     flag,
     progress,
     attempts,
@@ -33,7 +34,7 @@ export function FlagDetail() {
         <div>
           <h1 className="font-display text-3xl italic">{flag.name}</h1>
           <div className="mt-1 text-sm font-medium text-surface-500">
-            {flag.code.toUpperCase()} &middot; {CONTINENT_LABELS_FULL[flag.continent]}
+            {flag.code.toUpperCase()} &middot; {groupName(collection, flag.group)}
           </div>
         </div>
       </div>

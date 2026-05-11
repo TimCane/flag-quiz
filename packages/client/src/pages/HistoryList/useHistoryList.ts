@@ -1,6 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
-import { flags, type FlagProgress } from "@flag-quiz/shared";
-import { api } from "../../lib/api";
+import { useState, useMemo, useDeferredValue } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { type FlagProgress } from "@flag-quiz/shared";
+import { useCollectionApi } from "../../lib/api";
+import { useActiveCollection } from "../../lib/collection-context";
 
 interface FlagStats {
   flag: string;
@@ -15,53 +17,55 @@ export type StateFilter = "all" | "new" | "learning" | "review";
 export type { FlagStats };
 
 export function useHistoryList() {
-  const [statsMap, setStatsMap] = useState<Map<string, FlagStats>>(new Map());
-  const [progressMap, setProgressMap] = useState<Map<string, FlagProgress>>(new Map());
-  const [sparklines, setSparklines] = useState<Record<string, number[]>>({});
-  const [loading, setLoading] = useState(true);
+  const { collection } = useActiveCollection();
+  const api = useCollectionApi();
+  const flags = collection.flags;
+
   const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [continentFilter, setContinentFilter] = useState<string>("all");
+  const [groupFilter, setGroupFilter] = useState<string>("all");
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
   const [mnemonicFilter, setMnemonicFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
 
-  useEffect(() => {
-    Promise.all([
-      api.get<{ ok: boolean; flags: FlagStats[] }>("/stats/flags"),
-      api.get<{ ok: boolean; records: FlagProgress[] }>("/flag-progress"),
-      api.get<{ ok: boolean; sparklines: Record<string, number[]> }>("/stats/sparklines"),
-    ])
-      .then(([statsRes, progressRes, sparklinesRes]) => {
-        const sMap = new Map<string, FlagStats>();
-        for (const s of statsRes.flags) sMap.set(s.flag, s);
-        setStatsMap(sMap);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["historyList", collection.id],
+    queryFn: () =>
+      Promise.all([
+        api.get<{ ok: boolean; flags: FlagStats[] }>("/stats/flags"),
+        api.get<{ ok: boolean; records: FlagProgress[] }>("/flag-progress"),
+        api.get<{ ok: boolean; sparklines: Record<string, number[]> }>("/stats/sparklines"),
+      ]),
+  });
 
-        const pMap = new Map<string, FlagProgress>();
-        for (const p of progressRes.records) pMap.set(p.flag, p);
-        setProgressMap(pMap);
-        setSparklines(sparklinesRes.sparklines ?? {});
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  const statsMap = useMemo(() => {
+    const sMap = new Map<string, FlagStats>();
+    if (data) for (const s of data[0].flags) sMap.set(s.flag, s);
+    return sMap;
+  }, [data]);
+
+  const progressMap = useMemo(() => {
+    const pMap = new Map<string, FlagProgress>();
+    if (data) for (const p of data[1].records) pMap.set(p.flag, p);
+    return pMap;
+  }, [data]);
+
+  const sparklines = data?.[2].sparklines ?? {};
 
   const sortedFlags = useMemo(() => {
     let filtered = [...flags];
 
-    // Search
-    if (search) {
-      const q = search.toLowerCase();
+    if (deferredSearch) {
+      const q = deferredSearch.toLowerCase();
       filtered = filtered.filter(
         (f) => f.name.toLowerCase().includes(q) || f.code.includes(q),
       );
     }
 
-    // Continent filter
-    if (continentFilter !== "all") {
-      filtered = filtered.filter((f) => f.continent === continentFilter);
+    if (groupFilter !== "all") {
+      filtered = filtered.filter((f) => f.group === groupFilter);
     }
 
-    // State filter
     if (stateFilter !== "all") {
       filtered = filtered.filter((f) => {
         const p = progressMap.get(f.code);
@@ -72,7 +76,6 @@ export function useHistoryList() {
       });
     }
 
-    // Mnemonic filter
     if (mnemonicFilter === "has") {
       filtered = filtered.filter((f) => {
         const p = progressMap.get(f.code);
@@ -85,7 +88,6 @@ export function useHistoryList() {
       });
     }
 
-    // Sort
     filtered.sort((a, b) => {
       const sa = statsMap.get(a.code);
       const sb = statsMap.get(b.code);
@@ -113,17 +115,18 @@ export function useHistoryList() {
     });
 
     return filtered;
-  }, [flags, statsMap, progressMap, sortKey, continentFilter, stateFilter, mnemonicFilter, search]);
+  }, [flags, statsMap, progressMap, sortKey, groupFilter, stateFilter, mnemonicFilter, deferredSearch]);
 
   return {
     statsMap,
     progressMap,
     sparklines,
-    loading,
+    loading: isLoading,
+    error: error?.message ?? null,
     sortKey,
     setSortKey,
-    continentFilter,
-    setContinentFilter,
+    groupFilter,
+    setGroupFilter,
     stateFilter,
     setStateFilter,
     mnemonicFilter,
@@ -131,5 +134,7 @@ export function useHistoryList() {
     search,
     setSearch,
     sortedFlags,
+    groupLabel: collection.groupLabel,
+    groups: collection.groups,
   };
 }

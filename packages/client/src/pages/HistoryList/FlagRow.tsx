@@ -1,8 +1,10 @@
+import { memo } from "react";
 import { Link } from "react-router";
 import { type Flag } from "@flag-quiz/shared";
 import { FlagDisplay } from "../../components/game/FlagDisplay";
 import { Sparkline } from "../../components/ui/sparkline";
-import { CONTINENT_LABELS, STATE_LABELS, STATE_COLORS } from "../../lib/labels";
+import { STATE_LABELS, STATE_COLORS, groupName } from "../../lib/labels";
+import { useActiveCollection } from "../../lib/collection-context";
 
 interface FlagRowProps {
   flag: Flag;
@@ -13,18 +15,18 @@ interface FlagRowProps {
   attemptCount?: number;
 }
 
-export function FlagRow({ flag, state, mnemonic, sparklineData, accuracy, attemptCount }: FlagRowProps) {
+export const FlagRow = memo(function FlagRow({ flag, state, mnemonic, sparklineData, accuracy, attemptCount }: FlagRowProps) {
+  const { collection } = useActiveCollection();
   return (
     <Link
-      to={`/history/${flag.code}`}
+      to={`/${collection.id}/history/${flag.code}`}
       className="flex flex-col gap-2 rounded-xl border border-surface-800/80 bg-surface-900/50 p-3.5 transition-all duration-200 hover:border-surface-700 hover:bg-surface-800/50 glow-border"
     >
-      {/* Top: flag + name + state */}
       <div className="flex items-center gap-3">
         <FlagDisplay code={flag.code} size="sm" />
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-surface-300">{flag.name}</div>
-          <div className="text-xs text-surface-500">{CONTINENT_LABELS[flag.continent]}</div>
+          <div className="text-xs text-surface-500">{groupName(collection, flag.group)}</div>
         </div>
         <div className="text-right text-sm">
           <div className={`font-semibold ${STATE_COLORS[state]}`}>
@@ -40,7 +42,6 @@ export function FlagRow({ flag, state, mnemonic, sparklineData, accuracy, attemp
         </div>
       </div>
 
-      {/* Bottom: sparkline + mnemonic */}
       {(sparklineData?.length ?? 0) > 1 || mnemonic ? (
         <div className="flex items-center gap-3 pl-1">
           {sparklineData && sparklineData.length > 1 && (
@@ -55,4 +56,4 @@ export function FlagRow({ flag, state, mnemonic, sparklineData, accuracy, attemp
       ) : null}
     </Link>
   );
-}
+});

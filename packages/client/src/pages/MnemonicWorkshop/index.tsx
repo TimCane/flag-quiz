@@ -2,20 +2,20 @@ import { useMnemonicWorkshop } from "./useMnemonicWorkshop";
 import { Button } from "../../components/ui/button";
 import { FilterSelect } from "../../components/ui/filter-select";
 import { Save } from "lucide-react";
-import { CONTINENT_LABELS } from "../../lib/labels";
 import { Spinner } from "../../components/ui/spinner";
 import { MnemonicCard } from "./MnemonicCard";
 
 export function MnemonicWorkshop() {
   const {
     edits,
+    pendingCount,
     loading,
     saving,
     savedCount,
     filter,
     setFilter,
-    continentFilter,
-    setContinentFilter,
+    groupFilter,
+    setGroupFilter,
     tagFilter,
     setTagFilter,
     search,
@@ -24,11 +24,14 @@ export function MnemonicWorkshop() {
     handleEdit,
     handleSaveAll,
     handleTagsChange,
+    tagEdits,
     filteredFlags,
     filledCount,
     totalFlags,
     tags,
     flagTagsMap,
+    groupLabel,
+    groups,
   } = useMnemonicWorkshop();
 
   if (loading) {
@@ -48,10 +51,10 @@ export function MnemonicWorkshop() {
             <span className="font-bold text-emerald-400">{filledCount}</span>/{totalFlags} flags have notes
           </p>
         </div>
-        {edits.size > 0 && (
+        {pendingCount > 0 && (
           <Button onClick={handleSaveAll} disabled={saving} className="gap-2" variant="success">
             <Save className="h-4 w-4" />
-            {saving ? "Saving..." : `Save ${edits.size} change${edits.size !== 1 ? "s" : ""}`}
+            {saving ? "Saving..." : `Save ${pendingCount} change${pendingCount !== 1 ? "s" : ""}`}
           </Button>
         )}
         {savedCount > 0 && (
@@ -70,11 +73,11 @@ export function MnemonicWorkshop() {
           className="flex-1 rounded-xl border border-surface-700/80 bg-surface-800/60 px-4 py-3 text-sm text-white placeholder-surface-500 italic backdrop-blur-sm transition-all duration-200 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none sm:max-w-xs"
         />
         <FilterSelect
-          value={continentFilter}
-          onChange={setContinentFilter}
+          value={groupFilter}
+          onChange={setGroupFilter}
           options={[
-            { value: "all", label: "All continents" },
-            ...Object.entries(CONTINENT_LABELS).map(([v, l]) => ({ value: v, label: l })),
+            { value: "all", label: `All ${groupLabel.toLowerCase()}s` },
+            ...groups.map((g) => ({ value: g.id, label: g.name })),
           ]}
         />
         <FilterSelect
@@ -107,7 +110,7 @@ export function MnemonicWorkshop() {
             key={flag.code}
             flag={flag}
             mnemonic={getDisplayMnemonic(flag.code)}
-            isEdited={edits.has(flag.code)}
+            isEdited={edits.has(flag.code) || tagEdits.has(flag.code)}
             onEdit={handleEdit}
             tags={tags}
             assignedTagIds={flagTagsMap.get(flag.code) || []}
@@ -116,11 +119,11 @@ export function MnemonicWorkshop() {
         ))}
       </div>
 
-      {edits.size > 0 && (
+      {pendingCount > 0 && (
         <div className="fixed bottom-20 left-4 right-4 sm:hidden">
           <Button onClick={handleSaveAll} disabled={saving} className="w-full gap-2 shadow-2xl" variant="success" size="xl">
             <Save className="h-4 w-4" />
-            {saving ? "Saving..." : `Save ${edits.size} change${edits.size !== 1 ? "s" : ""}`}
+            {saving ? "Saving..." : `Save ${pendingCount} change${pendingCount !== 1 ? "s" : ""}`}
           </Button>
         </div>
       )}

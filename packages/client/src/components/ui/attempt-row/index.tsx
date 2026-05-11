@@ -1,7 +1,7 @@
 import { Link } from "react-router";
-import { flagByCode } from "@flag-quiz/shared";
 import { FlagDisplay } from "../../game/FlagDisplay";
 import { RATING_LABELS, formatReactionTime } from "../../../lib/labels";
+import { useActiveCollection } from "../../../lib/collection-context";
 
 interface AttemptRowProps {
   id: string;
@@ -25,8 +25,9 @@ export function AttemptRow({
   ts,
   linkToFlag = true,
 }: AttemptRowProps) {
-  const flag = flagByCode.get(flagCode);
-  const guessFlag = guess ? flagByCode.get(guess) : null;
+  const { collection, flagByCode } = useActiveCollection();
+  const flag = flagByCode(flagCode);
+  const guessFlag = guess ? flagByCode(guess) : null;
 
   const content = (
     <>
@@ -65,7 +66,7 @@ export function AttemptRow({
 
   if (linkToFlag) {
     return (
-      <Link to={`/history/${flagCode}`} className={className}>
+      <Link to={`/${collection.id}/history/${flagCode}`} className={className}>
         {content}
       </Link>
     );

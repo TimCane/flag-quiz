@@ -1,16 +1,14 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, BarChart, Bar, Cell,
   PieChart, Pie, ResponsiveContainer,
 } from "recharts";
-import { flagByCode } from "@flag-quiz/shared";
 import { usePresentation } from "./usePresentation";
 import { Spinner } from "../../components/ui/spinner";
 import { Button } from "../../components/ui/button";
 import { Sparkline } from "../../components/ui/sparkline";
 import { ArrowLeft } from "lucide-react";
-import { RATING_LABELS, CONFIDENCE_COLORS, PIE_COLORS, CONTINENT_COLORS } from "../../lib/labels";
+import { RATING_LABELS, CONFIDENCE_COLORS, PIE_COLORS, groupColors } from "../../lib/labels";
 import "reveal.js/reveal.css";
 import "reveal.js/theme/black.css";
 import "./presentation.css";
@@ -125,8 +123,10 @@ function FlagAnalyticsBlock({ flag, sparklines, sparklineWidth, sparklineHeight,
 }
 
 export function Presentation() {
-  const navigate = useNavigate();
   const {
+    collection,
+    imageUrl,
+    flagByCode,
     slideGroups,
     config,
     analyticsData,
@@ -135,6 +135,7 @@ export function Presentation() {
     deckRef,
     initReveal,
     destroyReveal,
+    handleBack,
   } = usePresentation();
 
   useEffect(() => {
@@ -152,12 +153,12 @@ export function Presentation() {
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
-        navigate("/settings");
+        handleBack();
       }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [navigate]);
+  }, [handleBack]);
 
   if (loading) {
     return (
@@ -171,7 +172,7 @@ export function Presentation() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface-950">
         <div className="text-red-400">{error || "No configuration found"}</div>
-        <Button variant="outline" onClick={() => navigate("/settings")}>
+        <Button variant="outline" onClick={() => handleBack()}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Settings
         </Button>
@@ -183,7 +184,7 @@ export function Presentation() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface-950">
         <div className="text-surface-400">No flags assigned to selected tags</div>
-        <Button variant="outline" onClick={() => navigate("/settings")}>
+        <Button variant="outline" onClick={() => handleBack()}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Settings
         </Button>
@@ -298,7 +299,7 @@ export function Presentation() {
                     <div key={flag.code} style={{ textAlign: "center", maxWidth: `${colWidth}px` }}>
                       <div className="flag-container" style={{ display: "inline-block" }}>
                         <img
-                          src={`/flags/${flag.code}.png`}
+                          src={imageUrl(flag.code)}
                           alt={flag.name}
                           className="flag-image"
                           style={{ height: imgHeight }}
@@ -334,7 +335,7 @@ export function Presentation() {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "60px" }}>
                   {/* Flag image — left side */}
                   <div className="flag-container">
-                    <img src={`/flags/${flag.code}.png`} alt={flag.name} className="flag-image" />
+                    <img src={imageUrl(flag.code)} alt={flag.name} className="flag-image" />
                   </div>
 
                   {/* Info — right side */}
@@ -365,7 +366,7 @@ export function Presentation() {
                     <div style={{ display: "flex", justifyContent: "center", gap: "16px" }}>
                       {flag.confusions.map((c) => (
                         <div key={c.code} className="pres-confusion-card">
-                          <img src={`/flags/${c.code}.png`} alt={c.name} />
+                          <img src={imageUrl(c.code)} alt={c.name} />
                           <span className="text-xs text-surface-400">{c.name}</span>
                         </div>
                       ))}
@@ -442,18 +443,18 @@ export function Presentation() {
             </section>
 
             {/* Accuracy by Continent */}
-            {analyticsData!.continentData.length > 0 && (
+            {analyticsData!.groupData.length > 0 && (
               <section>
                 <h3 className="text-3xl font-bold mb-8">Accuracy by Continent</h3>
                 <div className="chart-container">
                   <ResponsiveContainer width="100%" height={500}>
-                    <BarChart data={analyticsData!.continentData}>
+                    <BarChart data={analyticsData!.groupData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1c2030" />
-                      <XAxis dataKey="continent" stroke="#5a6178" tick={{ fontSize: 16 }} />
+                      <XAxis dataKey="group" stroke="#5a6178" tick={{ fontSize: 16 }} />
                       <YAxis stroke="#5a6178" tick={{ fontSize: 16 }} domain={[0, 100]} />
                       <Bar dataKey="accuracy" radius={[6, 6, 0, 0]}>
-                        {analyticsData!.continentData.map((d) => (
-                          <Cell key={d.continent} fill={CONTINENT_COLORS[d.continent] || "#10b981"} />
+                        {analyticsData!.groupData.map((d) => (
+                          <Cell key={d.group} fill={groupColors(collection)[d.group] || "#10b981"} />
                         ))}
                       </Bar>
                     </BarChart>
@@ -564,11 +565,11 @@ export function Presentation() {
                 <h3 className="text-3xl font-bold mb-8">Hardest Flags</h3>
                 <div className="flex flex-wrap justify-center gap-6">
                   {analyticsData!.hardest.slice(0, 10).map((h, i) => {
-                    const f = flagByCode.get(h.flag);
+                    const f = flagByCode(h.flag);
                     return (
                       <div key={h.flag} className="flex items-center gap-4 rounded-xl border border-surface-700 bg-surface-900/50 px-6 py-4">
                         <span className="text-2xl font-bold text-surface-500">#{i + 1}</span>
-                        <img src={`/flags/${h.flag}.png`} alt={f?.name} className="h-10 rounded" />
+                        <img src={imageUrl(h.flag)} alt={f?.name} className="h-10 rounded" />
                         <div>
                           <div className="text-lg font-medium text-white">{f?.name}</div>
                           <div className="text-sm text-surface-500">
@@ -591,17 +592,17 @@ export function Presentation() {
                 <h3 className="text-3xl font-bold mb-8">Most Confused Pairs</h3>
                 <div className="flex flex-wrap justify-center gap-6">
                   {analyticsData!.mergedPairs.slice(0, 10).map((p) => {
-                    const fa = flagByCode.get(p.flagA);
-                    const fb = flagByCode.get(p.flagB);
+                    const fa = flagByCode(p.flagA);
+                    const fb = flagByCode(p.flagB);
                     return (
                       <div key={`${p.flagA}-${p.flagB}`} className="flex items-center gap-4 rounded-xl border border-surface-700 bg-surface-900/50 px-6 py-4">
                         <div className="text-center">
-                          <img src={`/flags/${p.flagA}.png`} alt={fa?.name} className="h-10 rounded" />
+                          <img src={imageUrl(p.flagA)} alt={fa?.name} className="h-10 rounded" />
                           <div className="text-xs text-surface-400 mt-1">{fa?.name}</div>
                         </div>
                         <span className="text-xl font-bold text-amber-400">{p.count}x</span>
                         <div className="text-center">
-                          <img src={`/flags/${p.flagB}.png`} alt={fb?.name} className="h-10 rounded" />
+                          <img src={imageUrl(p.flagB)} alt={fb?.name} className="h-10 rounded" />
                           <div className="text-xs text-surface-400 mt-1">{fb?.name}</div>
                         </div>
                       </div>

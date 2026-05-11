@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { type Tag, type Setting } from "@flag-quiz/shared";
-import { api } from "../../lib/api";
+import { useNavigate } from "react-router";
+import { type Tag, type Setting, SETTING_KEYS } from "@flag-quiz/shared";
+import { api, useCollectionApi } from "../../lib/api";
+import { useActiveCollection } from "../../lib/collection-context";
+import { useToast } from "../../components/ui/toast";
 
 export interface PresentationConfig {
   tag_order: string[];
@@ -21,21 +24,27 @@ const DEFAULT_CONFIG: PresentationConfig = {
 };
 
 export function usePresentationSection() {
+  const { collection } = useActiveCollection();
+  const collectionApi = useCollectionApi();
+  const navigate = useNavigate();
+  const { showToast } = useToast();
   const [config, setConfig] = useState<PresentationConfig>(DEFAULT_CONFIG);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   useEffect(() => {
     Promise.all([
-      api.get<{ ok: boolean; tags: Tag[] }>("/tags"),
+      collectionApi.get<{ ok: boolean; tags: Tag[] }>("/tags"),
       api.get<{ ok: boolean; settings: Setting[] }>("/settings"),
     ])
       .then(([tagsRes, settingsRes]) => {
         setTags(tagsRes.tags);
 
         const configSetting = settingsRes.settings.find(
-          (s) => s.key === "presentation_config",
+          (s) => s.key === SETTING_KEYS.PRESENTATION_CONFIG,
         );
         if (configSetting) {
           try {
@@ -57,7 +66,7 @@ export function usePresentationSection() {
           value: JSON.stringify(newConfig),
         });
       } catch {
-        // Best effort
+        showToast("Failed to save presentation config");
       }
     },
     [],
@@ -97,6 +106,34 @@ export function usePresentationSection() {
     [config, saveConfig],
   );
 
+  const selectedTags = config.tag_order
+    .map((id) => tags.find((t) => t.id === id))
+    .filter((t): t is NonNullable<typeof t> => !!t);
+
+  const unselectedTags = tags.filter((t) => !config.tag_order.includes(t.id));
+
+  function handleDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault();
+    setDragOverIndex(index);
+  }
+
+  function handleDrop(index: number) {
+    if (dragIndex !== null && dragIndex !== index) {
+      reorderTags(dragIndex, index);
+    }
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function handleDragEnd() {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function handleLaunch() {
+    navigate(`/${collection.id}/presentation`);
+  }
+
   return {
     config,
     tags,
@@ -104,8 +141,16 @@ export function usePresentationSection() {
     expanded,
     setExpanded,
     toggleTag,
-    reorderTags,
     toggleOption,
     setFragmentDelay,
+    selectedTags,
+    unselectedTags,
+    dragIndex,
+    dragOverIndex,
+    setDragIndex,
+    handleDragOver,
+    handleDrop,
+    handleDragEnd,
+    handleLaunch,
   };
 }

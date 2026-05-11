@@ -1,44 +1,64 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { flags, type FlagProgress, type Tag, type FlagTag } from "@flag-quiz/shared";
-import { api } from "../../lib/api";
+import { useState, useCallback, useMemo, useDeferredValue } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { type FlagProgress, type Tag, type FlagTag } from "@flag-quiz/shared";
+import { useCollectionApi } from "../../lib/api";
+import { useActiveCollection } from "../../lib/collection-context";
+import { useToast } from "../../components/ui/toast";
 
 export function useMnemonicWorkshop() {
-  const [progressMap, setProgressMap] = useState<Map<string, FlagProgress>>(new Map());
+  const { collection } = useActiveCollection();
+  const api = useCollectionApi();
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const flags = collection.flags;
+
   const [edits, setEdits] = useState<Map<string, string>>(new Map());
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
   const [filter, setFilter] = useState<string>("all");
-  const [continentFilter, setContinentFilter] = useState<string>("all");
+  const [groupFilter, setGroupFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [flagTagsMap, setFlagTagsMap] = useState<Map<string, string[]>>(new Map());
+  const deferredSearch = useDeferredValue(search);
 
-  useEffect(() => {
-    Promise.all([
-      api.get<{ ok: boolean; records: FlagProgress[] }>("/flag-progress"),
-      api.get<{ ok: boolean; tags: Tag[] }>("/tags"),
-      api.get<{ ok: boolean; flag_tags: FlagTag[] }>("/flag-tags"),
-    ])
-      .then(([progressRes, tagsRes, flagTagsRes]) => {
-        const pMap = new Map<string, FlagProgress>();
-        for (const p of progressRes.records) pMap.set(p.flag, p);
-        setProgressMap(pMap);
+  const { data, isLoading } = useQuery({
+    queryKey: ["mnemonicWorkshop", collection.id],
+    queryFn: () =>
+      Promise.all([
+        api.get<{ ok: boolean; records: FlagProgress[] }>("/flag-progress"),
+        api.get<{ ok: boolean; tags: Tag[] }>("/tags"),
+        api.get<{ ok: boolean; flag_tags: FlagTag[] }>("/flag-tags"),
+      ]),
+  });
 
-        setTags(tagsRes.tags);
+  const progressMap = useMemo(() => {
+    const pMap = new Map<string, FlagProgress>();
+    if (data) for (const p of data[0].records) pMap.set(p.flag, p);
+    return pMap;
+  }, [data]);
 
-        const ftMap = new Map<string, string[]>();
-        for (const ft of flagTagsRes.flag_tags) {
-          const list = ftMap.get(ft.flag) || [];
-          list.push(ft.tag_id);
-          ftMap.set(ft.flag, list);
-        }
-        setFlagTagsMap(ftMap);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  const tags = data?.[1].tags ?? [];
+
+  const flagTagsMap = useMemo(() => {
+    const ftMap = new Map<string, string[]>();
+    if (data) {
+      for (const ft of data[2].flag_tags) {
+        const list = ftMap.get(ft.flag) || [];
+        list.push(ft.tag_id);
+        ftMap.set(ft.flag, list);
+      }
+    }
+    return ftMap;
+  }, [data]);
+
+  // Local edits for flag tags — accumulated until save
+  const [tagEdits, setTagEdits] = useState<Map<string, string[]>>(new Map());
+
+  const effectiveFlagTags = useMemo(() => {
+    if (tagEdits.size === 0) return flagTagsMap;
+    const merged = new Map(flagTagsMap);
+    for (const [code, ids] of tagEdits) merged.set(code, ids);
+    return merged;
+  }, [flagTagsMap, tagEdits]);
 
   const getDisplayMnemonic = useCallback(
     (code: string) => {
@@ -61,95 +81,101 @@ export function useMnemonicWorkshop() {
     }
   }
 
-  const handleTagsChange = useCallback(
-    async (code: string, tagIds: string[]) => {
-      setFlagTagsMap((prev) => new Map(prev).set(code, tagIds));
-      try {
-        await api.put(`/flag-tags/${code}`, {
-          tag_ids: tagIds,
-          updated_at: new Date().toISOString(),
-        });
-      } catch {
-        // Revert on failure
-        api
-          .get<{ ok: boolean; flag_tags: FlagTag[] }>("/flag-tags")
-          .then((res) => {
-            const ftMap = new Map<string, string[]>();
-            for (const ft of res.flag_tags) {
-              const list = ftMap.get(ft.flag) || [];
-              list.push(ft.tag_id);
-              ftMap.set(ft.flag, list);
-            }
-            setFlagTagsMap(ftMap);
-          })
-          .catch(() => {});
+  function handleTagsChange(code: string, tagIds: string[]) {
+    const original = flagTagsMap.get(code) || [];
+    const same = tagIds.length === original.length && tagIds.every((id) => original.includes(id));
+    if (same) {
+      setTagEdits((prev) => {
+        const next = new Map(prev);
+        next.delete(code);
+        return next;
+      });
+    } else {
+      setTagEdits((prev) => new Map(prev).set(code, tagIds));
+    }
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: async ({ mnemonics, tagChanges }: {
+      mnemonics: { code: string; mnemonic: string }[];
+      tagChanges: { code: string; tagIds: string[] }[];
+    }) => {
+      const promises: Promise<{ success: boolean }>[] = [];
+
+      for (const { code, mnemonic } of mnemonics) {
+        const existing = progressMap.get(code);
+        promises.push(
+          api
+            .post("/flag-progress", {
+              flag: code,
+              mnemonic,
+              stability: existing?.stability ?? null,
+              difficulty: existing?.difficulty ?? null,
+              state: existing?.state ?? 0,
+              last_review: existing?.last_review ?? null,
+              due: existing?.due ?? null,
+              updated_at: new Date().toISOString(),
+            })
+            .then(() => ({ success: true }))
+            .catch(() => ({ success: false })),
+        );
       }
+
+      for (const { code, tagIds } of tagChanges) {
+        promises.push(
+          api
+            .put(`/flag-tags/${code}`, {
+              tag_ids: tagIds,
+              updated_at: new Date().toISOString(),
+            })
+            .then(() => ({ success: true }))
+            .catch(() => ({ success: false })),
+        );
+      }
+
+      const results = await Promise.allSettled(promises);
+      let count = 0;
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value.success) count++;
+      }
+      return count;
     },
-    [],
-  );
+    onSuccess: (count, { mnemonics, tagChanges }) => {
+      const total = mnemonics.length + tagChanges.length;
+      if (count < total) {
+        showToast(`${total - count} change${total - count !== 1 ? "s" : ""} failed to save`);
+      }
+      setEdits(new Map());
+      setTagEdits(new Map());
+      setSavedCount(count);
+      setTimeout(() => setSavedCount(0), 2000);
+      queryClient.invalidateQueries({ queryKey: ["mnemonicWorkshop", collection.id] });
+    },
+    onError: () => {
+      showToast("Failed to save — check your connection");
+    },
+  });
+
+  const pendingCount = edits.size + tagEdits.size;
 
   async function handleSaveAll() {
-    if (edits.size === 0) return;
-    setSaving(true);
-
-    const entries = [...edits.entries()].map(([code, mnemonic]) => {
-      const existing = progressMap.get(code);
-      return api
-        .post("/flag-progress", {
-          flag: code,
-          mnemonic,
-          stability: existing?.stability ?? null,
-          difficulty: existing?.difficulty ?? null,
-          state: existing?.state ?? 0,
-          last_review: existing?.last_review ?? null,
-          due: existing?.due ?? null,
-          updated_at: new Date().toISOString(),
-        })
-        .then(() => ({ code, mnemonic, success: true as const }))
-        .catch(() => ({ code, mnemonic, success: false as const }));
+    if (pendingCount === 0) return;
+    saveMutation.mutate({
+      mnemonics: [...edits.entries()].map(([code, mnemonic]) => ({ code, mnemonic })),
+      tagChanges: [...tagEdits.entries()].map(([code, tagIds]) => ({ code, tagIds })),
     });
-
-    const results = await Promise.allSettled(entries);
-    let count = 0;
-
-    for (const result of results) {
-      if (result.status === "fulfilled" && result.value.success) {
-        const { code, mnemonic } = result.value;
-        setProgressMap((prev) => {
-          const next = new Map(prev);
-          const old = prev.get(code);
-          next.set(code, {
-            flag: code,
-            mnemonic,
-            stability: old?.stability ?? null,
-            difficulty: old?.difficulty ?? null,
-            state: old?.state ?? 0,
-            last_review: old?.last_review ?? null,
-            due: old?.due ?? null,
-            updated_at: new Date().toISOString(),
-          });
-          return next;
-        });
-        count++;
-      }
-    }
-
-    setEdits(new Map());
-    setSavedCount(count);
-    setSaving(false);
-    setTimeout(() => setSavedCount(0), 2000);
   }
 
   const filteredFlags = useMemo(
     () =>
       flags.filter((f) => {
-        if (search) {
-          const q = search.toLowerCase();
+        if (deferredSearch) {
+          const q = deferredSearch.toLowerCase();
           if (!f.name.toLowerCase().includes(q) && !f.code.includes(q)) return false;
         }
-        if (continentFilter !== "all" && f.continent !== continentFilter) return false;
+        if (groupFilter !== "all" && f.group !== groupFilter) return false;
         if (tagFilter !== "all") {
-          const assignedTags = flagTagsMap.get(f.code) || [];
+          const assignedTags = effectiveFlagTags.get(f.code) || [];
           if (tagFilter === "untagged") {
             if (assignedTags.length > 0) return false;
           } else {
@@ -165,23 +191,24 @@ export function useMnemonicWorkshop() {
         }
         return true;
       }),
-    [search, continentFilter, tagFilter, filter, getDisplayMnemonic, flagTagsMap],
+    [flags, deferredSearch, groupFilter, tagFilter, filter, getDisplayMnemonic, effectiveFlagTags],
   );
 
   const filledCount = useMemo(
     () => flags.filter((f) => getDisplayMnemonic(f.code).length > 0).length,
-    [getDisplayMnemonic],
+    [flags, getDisplayMnemonic],
   );
 
   return {
     edits,
-    loading,
-    saving,
+    pendingCount,
+    loading: isLoading,
+    saving: saveMutation.isPending,
     savedCount,
     filter,
     setFilter,
-    continentFilter,
-    setContinentFilter,
+    groupFilter,
+    setGroupFilter,
     tagFilter,
     setTagFilter,
     search,
@@ -194,6 +221,9 @@ export function useMnemonicWorkshop() {
     filledCount,
     totalFlags: flags.length,
     tags,
-    flagTagsMap,
+    tagEdits,
+    flagTagsMap: effectiveFlagTags,
+    groupLabel: collection.groupLabel,
+    groups: collection.groups,
   };
 }

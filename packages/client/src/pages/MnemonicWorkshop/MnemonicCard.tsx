@@ -1,8 +1,10 @@
+import { memo } from "react";
 import { type Flag, type Tag } from "@flag-quiz/shared";
 import { FlagDisplay } from "../../components/game/FlagDisplay";
 import { MnemonicTextarea } from "../../components/ui/mnemonic-textarea";
 import { TagSelect } from "../../components/ui/tag-select";
-import { CONTINENT_LABELS } from "../../lib/labels";
+import { groupName } from "../../lib/labels";
+import { useActiveCollection } from "../../lib/collection-context";
 
 interface MnemonicCardProps {
   flag: Flag;
@@ -14,7 +16,8 @@ interface MnemonicCardProps {
   onTagsChange: (code: string, tagIds: string[]) => void;
 }
 
-export function MnemonicCard({ flag, mnemonic, isEdited, onEdit, tags, assignedTagIds, onTagsChange }: MnemonicCardProps) {
+export const MnemonicCard = memo(function MnemonicCard({ flag, mnemonic, isEdited, onEdit, tags, assignedTagIds, onTagsChange }: MnemonicCardProps) {
+  const { collection } = useActiveCollection();
   return (
     <div
       className={`flex flex-col items-center gap-3 rounded-2xl border p-5 transition-all duration-200 ${
@@ -29,7 +32,7 @@ export function MnemonicCard({ flag, mnemonic, isEdited, onEdit, tags, assignedT
       <div className="text-center">
         <span className="font-semibold text-surface-300">{flag.name}</span>
         <span className="ml-2 text-xs font-medium text-surface-600">
-          {CONTINENT_LABELS[flag.continent]}
+          {groupName(collection, flag.group)}
         </span>
       </div>
       <MnemonicTextarea
@@ -47,4 +50,4 @@ export function MnemonicCard({ flag, mnemonic, isEdited, onEdit, tags, assignedT
       </div>
     </div>
   );
-}
+});

@@ -1,6 +1,6 @@
-import { flagByCode } from "@flag-quiz/shared";
 import { FlagDisplay } from "../../components/game/FlagDisplay";
 import { Card, CardHeader, CardTitle, CardContent } from "../../components/ui/card";
+import { useActiveCollection } from "../../lib/collection-context";
 
 interface MergedPair {
   flagA: string;
@@ -9,6 +9,7 @@ interface MergedPair {
 }
 
 export function ConfusedPairsTable({ pairs }: { pairs: MergedPair[] }) {
+  const { flagByCode } = useActiveCollection();
   return (
     <Card>
       <CardHeader><CardTitle>Most Confused Pairs</CardTitle></CardHeader>
@@ -18,8 +19,8 @@ export function ConfusedPairsTable({ pairs }: { pairs: MergedPair[] }) {
         ) : (
           <div className="space-y-2.5">
             {pairs.map((p) => {
-              const fa = flagByCode.get(p.flagA);
-              const fb = flagByCode.get(p.flagB);
+              const fa = flagByCode(p.flagA);
+              const fb = flagByCode(p.flagB);
               return (
                 <div
                   key={`${p.flagA}-${p.flagB}`}
